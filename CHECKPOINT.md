@@ -150,11 +150,16 @@ Notas da F2:
 - [x] Integração (MiniStack + Postgres reais, testcontainers): aplicação + inbox + delete; redelivery move uma vez; **HTTP × SQS = uma movimentação**; veneno → DLQ (`MALFORMED`×2, `MESSAGE_ID_CONFLICT`); remetente não autorizado; **cenário 5: commit e morte antes do delete → redelivery segura em outro consumer**; ordem FIFO preservada após falha transitória. Estável com `-count=3`
 - [x] E2E no stack real: produtor IAM do `provider-a` (AUTH=true) → SQS → carteira; cópia HTTP é replay; producer não consegue consumir a fila
 
-### F7 — Outbox relay — **PRÓXIMA**
-- [ ] Claim por cabeça de partição + lease + fencing token; publish SNS FIFO fora da transação; dead_at
-- [ ] Recuperação entre commit/publish e publish/mark
+### F7 — Outbox relay — **CONCLUÍDA** (2026-10-01)
+- [x] `OutboxRelay.Claim` em um único `UPDATE` autocommit: cabeça de cada partição (carteira) via `DISTINCT ON`, `FOR UPDATE SKIP LOCKED`, lease (`locked_until`) e **fencing token** (`claim_id`); cabeça arrendada, em backoff ou **estacionada (dead)** bloqueia a partição (ordem acima de disponibilidade)
+- [x] `app.Relay`: claim → publish **fora de transação SQL** → `MarkPublished` cercado por `claim_id`; falha → backoff exponencial (1s…5min) e `dead_at` após `OUTBOX_MAX_ATTEMPTS` (20); lease perdido só gera republicação (mesmo `eventId`)
+- [x] `snspublisher`: `PublishBatch` (lotes de 10) em `wager-events.fifo`; `MessageGroupId=walletId`, `MessageDeduplicationId=eventId`, atributos `eventType`/`eventVersion`; resultado por evento
+- [x] Terraform grava `aws/events_topic_arn`; role `outbox` (worker `outbox-relay` via `workers.Poller`); credencial IAM própria do publisher
+- [x] Integração (Postgres + MiniStack SNS→SQS reais, relógio controlável): eventos commitados sem relay (**crash entre commit e publicação**) publicados uma vez em ordem por carteira; **2 relays disputando** → tudo publicado, sem duplicata, ordem preservada; **crash entre publicação e confirmação** → outro relay assume após o lease e republica com o mesmo `eventId` (assinante recebe uma vez, `attempts=2`); falha persistente → backoff → dead, bloqueando a partição. Estável com `-count=3`
+- [x] E2E: evento `WalletBalanceChanged` chega à fila `wager-events-audit.fifo` com o contrato do envelope
+- [x] Achado do e2e com IAM aplicado: MiniStack exige `sns:PublishBatch` explicitamente (AWS usa `sns:Publish`) → policy lista as duas; o relay ficou em backoff sem perder nada e drenou sozinho após o reprovisionamento
 
-### F8 — Observabilidade e reconciliação — pendente
+### F8 — Observabilidade e reconciliação — **PRÓXIMA**
 - [ ] Logs JSON com allowlist; métricas Prometheus; health
 - [ ] Reconciliação (REPEATABLE READ, `lag()`), sweeper periódico
 - [ ] Grafana/Prometheus (profile `obs`)
@@ -178,8 +183,8 @@ Notas da F2:
 
 - [x] Índice de reversão **sem** `kind` (domínio na F1, índice no banco na F2, com teste e mutação de controle)
 - [x] Todo `SKIP LOCKED` dentro de transação (resolver: carteira `SKIP LOCKED` + transação travada na mesma transação SQL)
-- [ ] Nunca I/O de rede com transação SQL aberta
-- [~] `MessageGroupId = walletId` e batch FIFO bloqueia grupo após falha (F6); claim da outbox por cabeça de partição (F7)
+- [x] Nunca I/O de rede com transação SQL aberta (relay: claim commitado antes do publish; consumer: delete/DLQ após o commit)
+- [x] `MessageGroupId = walletId`; batch FIFO bloqueia grupo após falha (F6); claim da outbox por cabeça de partição (F7)
 - [x] Replay devolve saldo observado; mesmo externalId com chave nova → `ErrDuplicateExternalTransaction` (409 na F5)
 - [x] Validar assinatura, `iss`, `aud`; 404 para transação de outro provider
 - [ ] Testes sem mocks de PG/SQS/IdP; processos reais
@@ -205,6 +210,7 @@ Observação: o Keycloak responde 503 (bootstrap) por alguns segundos depois do 
 | 2026-10-01 | — | Pesquisa, arquitetura e estudo de 12 forks concluídos | Iniciar F0 |
 | 2026-10-01 | F0 | Fundação completa: compose isolado, Terraform provisionando Keycloak/MiniStack/Postgres, esqueleto Fx com health, edge Traefik, spikes executados | F1: domínio puro (Money primeiro) |
 | 2026-10-01 | F1 | Domínio puro completo (money, wallet, wagering, events) com testes unitários, fuzz, vetores golden e guardas arquiteturais; `go test -race` verde | F2: migrations goose + constraints/triggers + repositórios pgx |
+| 2026-10-01 | F7 | Outbox relay multi-instância (SNS FIFO, lease + fencing, ordem por carteira, recuperação de crash); cenário 6 verde | F8: métricas, logs, reconciliação |
 | 2026-10-01 | F6 | Consumer SQS com inbox transacional, DLQ, ordem FIFO, shutdown seguro; cenário 5 e cruzamento HTTP×SQS verdes | F7: outbox relay (SNS FIFO) |
 | 2026-10-01 | F5 | API HTTP + OIDC + OpenAPI; testes de contrato e e2e com Keycloak real verdes | F6: consumer SQS + inbox + DLQ |
 | 2026-10-01 | F4 | Reversões e worker de PENDING_REFERENCE (multi-instância, TTL, backoff, wake-up); cenário obrigatório 7 verde | F5: HTTP + OIDC + OpenAPI |

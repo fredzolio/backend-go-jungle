@@ -14,6 +14,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/testcontainers/testcontainers-go"
@@ -86,4 +87,45 @@ func (e *Env) NewQueues(t *testing.T, visibilitySeconds, maxReceive int) Queues 
 		t.Fatal(err)
 	}
 	return Queues{URL: aws.ToString(q.QueueUrl), DLQURL: aws.ToString(dlq.QueueUrl)}
+}
+
+// SNS returns a client with the emulator root credentials.
+func (e *Env) SNS() *sns.Client {
+	cfg := aws.Config{Region: "us-east-1", Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")}
+	return sns.NewFromConfig(cfg, func(o *sns.Options) { o.BaseEndpoint = aws.String(e.Endpoint) })
+}
+
+// Topic is an SNS FIFO topic fanned out (raw delivery) to an SQS FIFO queue.
+type Topic struct {
+	ARN, QueueURL string
+}
+
+// NewTopic creates an isolated FIFO topic with a subscribed FIFO audit queue.
+func (e *Env) NewTopic(t *testing.T) Topic {
+	t.Helper()
+	ctx := context.Background()
+	suffix := make([]byte, 4)
+	_, _ = rand.Read(suffix)
+	name := "events-" + hex.EncodeToString(suffix)
+	topic, err := e.SNS().CreateTopic(ctx, &sns.CreateTopicInput{Name: aws.String(name + ".fifo"),
+		Attributes: map[string]string{"FifoTopic": "true", "ContentBasedDeduplication": "false"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := e.SQS().CreateQueue(ctx, &sqs.CreateQueueInput{QueueName: aws.String(name + "-audit.fifo"),
+		Attributes: map[string]string{"FifoQueue": "true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attrs, err := e.SQS().GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{QueueUrl: q.QueueUrl,
+		AttributeNames: []types.QueueAttributeName{types.QueueAttributeNameQueueArn}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.SNS().Subscribe(ctx, &sns.SubscribeInput{TopicArn: topic.TopicArn, Protocol: aws.String("sqs"),
+		Endpoint: aws.String(attrs.Attributes["QueueArn"]), Attributes: map[string]string{"RawMessageDelivery": "true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Topic{ARN: aws.ToString(topic.TopicArn), QueueURL: aws.ToString(q.QueueUrl)}
 }

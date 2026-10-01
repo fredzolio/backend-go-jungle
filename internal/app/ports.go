@@ -131,3 +131,35 @@ type InboxStore interface {
 	// stored by the first delivery.
 	Complete(ctx context.Context, r InboxRecord) (inserted bool, storedHash string, err error)
 }
+
+// ClaimedEvent is an outbox event leased by one relay. ClaimID fences the lease:
+// only the holder of the current claim can confirm it.
+type ClaimedEvent struct {
+	PartitionKey string
+	EventType    string
+	Payload      []byte
+	EventVersion int
+	Attempts     int
+	ID           uuid.UUID
+	ClaimID      uuid.UUID
+}
+
+// OutboxRelayStore is used by the relay outside any business transaction.
+type OutboxRelayStore interface {
+	// Claim leases up to limit publishable events: only the oldest pending event
+	// of each partition (wallet) is eligible, so per-wallet order is preserved
+	// across any number of relays. Expired leases are reclaimable.
+	Claim(ctx context.Context, owner string, now time.Time, lease time.Duration, limit int) ([]ClaimedEvent, error)
+	// MarkPublished confirms a publication; false means the lease was lost.
+	MarkPublished(ctx context.Context, id, claimID uuid.UUID, at time.Time) (bool, error)
+	// Reschedule releases the lease after a failed publication (dead parks it).
+	Reschedule(ctx context.Context, e ClaimedEvent, next time.Time, lastErr string, dead bool) error
+	// Backlog reports the age of the oldest pending event and the pending count.
+	Backlog(ctx context.Context, now time.Time) (oldest time.Duration, pending int64, err error)
+}
+
+// EventPublisher publishes events to the integration destination, reporting an
+// error per event id (nil = accepted by the broker).
+type EventPublisher interface {
+	Publish(ctx context.Context, events []ClaimedEvent) map[uuid.UUID]error
+}

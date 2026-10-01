@@ -42,7 +42,10 @@ x-api-env: &api-env
   OIDC_ISSUER: ${PUBLIC_BASE_URL:-http://localhost:18080}/auth/realms/jungle
   OIDC_JWKS_URL: http://keycloak:8080/auth/realms/jungle/protocol/openid-connect/certs
   OIDC_AUDIENCE: jungle-api
-  ROLES: resolver,consumer
+  ROLES: resolver,consumer,outbox
+  AWS_PUBLISHER_ACCESS_KEY_ID_FILE: /provisioned/aws/outbox-publisher/access_key_id
+  AWS_PUBLISHER_SECRET_ACCESS_KEY_FILE: /provisioned/aws/outbox-publisher/secret_access_key
+  AWS_EVENTS_TOPIC_ARN_FILE: /provisioned/aws/events_topic_arn
   CONSUMER_SENDERS_FILE: /provisioned/aws/senders.json
   CONSUMER_TRUSTED_ACCOUNTS: "000000000000" # MiniStack reports the account as SenderId (see CHECKPOINT D10)
 

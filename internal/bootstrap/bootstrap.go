@@ -15,6 +15,7 @@ import (
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/httpapi"
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/oidc"
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/postgres"
+	"github.com/fredzolio/backend-go-jungle/internal/adapters/snspublisher"
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/sqsconsumer"
 	"github.com/fredzolio/backend-go-jungle/internal/app"
 	"github.com/fredzolio/backend-go-jungle/internal/platform/config"
@@ -48,6 +49,9 @@ func roleModules(cfg config.Config) []fx.Option {
 	}
 	if cfg.HasRole("consumer") {
 		opts = append(opts, consumerModule)
+	}
+	if cfg.HasRole("outbox") {
+		opts = append(opts, outboxModule)
 	}
 	return opts
 }
@@ -89,6 +93,16 @@ var consumerModule = fx.Module("consumer",
 			}).Run(ctx)
 		}}.Register(lc)
 		return nil
+	}),
+)
+
+var outboxModule = fx.Module("outbox",
+	fx.Provide(awsx.NewPublisherSNS),
+	fx.Invoke(func(lc fx.Lifecycle, pool *pgxpool.Pool, client awsx.PublisherSNS, cfg config.Config, log *slog.Logger) {
+		o := cfg.Outbox
+		relay := app.NewRelay(postgres.NewOutboxRelay(pool), snspublisher.New(client, cfg.AWS.EventsTopic), app.SystemClock{}, log,
+			cfg.InstanceID, app.RelayPolicy{Lease: o.Lease, InitialBackoff: o.InitialBackoff, MaxBackoff: o.MaxBackoff, MaxAttempts: o.MaxAttempts})
+		workers.Poller{Name: "outbox-relay", Run: relay.RunOnce, Log: log, Interval: o.PollInterval, Batch: o.Batch}.Register(lc)
 	}),
 )
 

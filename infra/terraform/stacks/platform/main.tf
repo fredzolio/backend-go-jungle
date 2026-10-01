@@ -52,3 +52,10 @@ resource "local_sensitive_file" "clients" {
   content         = jsonencode(module.keycloak.clients)
   file_permission = "0400"
 }
+
+# Integration events destination for the outbox relay.
+resource "local_file" "events_topic_arn" {
+  filename        = "${var.provisioned_dir}/aws/events_topic_arn"
+  file_permission = "0444"
+  content         = module.messaging.events_topic_arn
+}

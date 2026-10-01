@@ -9,11 +9,24 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/fredzolio/backend-go-jungle/internal/platform/config"
 	"github.com/fredzolio/backend-go-jungle/internal/platform/health"
 )
+
+// PublisherSNS is the SNS client authenticated as the outbox publisher.
+type PublisherSNS struct{ *sns.Client }
+
+// NewPublisherSNS builds the publisher's SNS client.
+func NewPublisherSNS(cfg config.Config) PublisherSNS {
+	return PublisherSNS{sns.NewFromConfig(awsConfig(cfg.AWS, cfg.AWS.Publisher), func(o *sns.Options) {
+		if cfg.AWS.EndpointURL != "" {
+			o.BaseEndpoint = aws.String(cfg.AWS.EndpointURL)
+		}
+	})}
+}
 
 // ConsumerSQS is the SQS client authenticated as the ingress consumer.
 type ConsumerSQS struct{ *sqs.Client }
@@ -23,13 +36,16 @@ func NewConsumerSQS(cfg config.Config) ConsumerSQS {
 	return ConsumerSQS{newSQS(cfg.AWS, cfg.AWS.Consumer)}
 }
 
-func newSQS(cfg config.AWS, creds config.Credentials) *sqs.Client {
-	awsCfg := aws.Config{
+func awsConfig(cfg config.AWS, creds config.Credentials) aws.Config {
+	return aws.Config{
 		Region:           cfg.Region,
 		Credentials:      credentials.NewStaticCredentialsProvider(creds.AccessKeyID, creds.SecretAccessKey, ""),
 		RetryMaxAttempts: 3,
 	}
-	return sqs.NewFromConfig(awsCfg, func(o *sqs.Options) {
+}
+
+func newSQS(cfg config.AWS, creds config.Credentials) *sqs.Client {
+	return sqs.NewFromConfig(awsConfig(cfg, creds), func(o *sqs.Options) {
 		if cfg.EndpointURL != "" {
 			o.BaseEndpoint = aws.String(cfg.EndpointURL)
 		}
