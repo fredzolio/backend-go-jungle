@@ -58,28 +58,33 @@ func (r *Relay) RunOnce(ctx context.Context, batch int) (int, error) {
 	}
 	results := r.pub.Publish(ctx, events)
 	faults.Point("relay.after_publish")
+	var published []ClaimedEvent
 	for _, e := range events {
-		if perr := results[e.ID]; perr != nil {
-			dead := e.Attempts >= r.policy.MaxAttempts
-			next := r.clock.Now().Add(r.backoff(e.Attempts))
-			if err := r.store.Reschedule(ctx, e, next, perr.Error(), dead); err != nil {
-				return len(events), err
-			}
-			r.metrics.OutboxFailed(dead)
-			r.log.WarnContext(ctx, "outbox publish failed", slog.String("eventId", e.ID.String()),
-				slog.String("eventType", e.EventType), slog.Int("attempts", e.Attempts), slog.Bool("dead", dead), slog.Any("error", perr))
+		perr := results[e.ID]
+		if perr == nil {
+			published = append(published, e)
 			continue
 		}
-		ok, err := r.store.MarkPublished(ctx, e.ID, e.ClaimID, r.clock.Now())
-		if err != nil {
+		dead := e.Attempts >= r.policy.MaxAttempts
+		if err := r.store.Reschedule(ctx, e, r.clock.Now().Add(r.backoff(e.Attempts)), perr.Error(), dead); err != nil {
 			return len(events), err
 		}
-		if !ok {
-			r.log.WarnContext(ctx, "outbox lease lost after publish; it may be republished", slog.String("eventId", e.ID.String()))
-			continue
-		}
-		r.metrics.OutboxPublished(1)
+		r.metrics.OutboxFailed(dead)
+		r.log.WarnContext(ctx, "outbox publish failed", slog.String("eventId", e.ID.String()),
+			slog.String("eventType", e.EventType), slog.Int("attempts", e.Attempts), slog.Bool("dead", dead), slog.Any("error", perr))
 	}
+	if len(published) == 0 {
+		return len(events), nil
+	}
+	confirmed, err := r.store.MarkPublished(ctx, published, r.clock.Now())
+	if err != nil {
+		return len(events), err
+	}
+	if confirmed < len(published) {
+		r.log.WarnContext(ctx, "outbox leases lost after publish; those events may be republished",
+			slog.Int("handled", len(published)-confirmed))
+	}
+	r.metrics.OutboxPublished(confirmed)
 	return len(events), nil
 }
 

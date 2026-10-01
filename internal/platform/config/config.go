@@ -132,7 +132,7 @@ type Outbox struct {
 	MaxBackoff     time.Duration `env:"MAX_BACKOFF"     envDefault:"5m"`
 	PollInterval   time.Duration `env:"POLL_INTERVAL"   envDefault:"200ms"`
 	MaxAttempts    int           `env:"MAX_ATTEMPTS"    envDefault:"20"`
-	Batch          int           `env:"BATCH"           envDefault:"50"`
+	Batch          int           `env:"BATCH"           envDefault:"200"`
 }
 
 // Consumer tunes the SQS ingress consumer (role "consumer").

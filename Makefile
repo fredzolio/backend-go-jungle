@@ -12,7 +12,7 @@ help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 # ---------- environment lifecycle ----------
-.PHONY: up down destroy ps logs provision outputs migrate-status migrate-down migrate-up obs-up
+.PHONY: up down destroy ps logs provision recover-broker outputs migrate-status migrate-down migrate-up obs-up
 up: ## Build and start the whole environment (detached)
 	$(COMPOSE) up --build -d --wait
 
@@ -34,6 +34,11 @@ logs: ## Follow logs (S=service to filter)
 
 provision: ## Re-run Terraform provisioning (idempotent)
 	$(COMPOSE) run --rm provisioner
+
+recover-broker: ## After a MiniStack crash: recreate queues/topic/IAM (Terraform) and restart the APIs
+	$(COMPOSE) up -d ministack
+	$(COMPOSE) run --rm provisioner
+	$(COMPOSE) restart api-1 api-2 api-3
 
 outputs: ## Show non-sensitive Terraform outputs
 	$(COMPOSE) run --rm provisioner output
@@ -70,6 +75,16 @@ lab-unexpose: ## Remove the public route (Terraform destroy of edge-lab)
 
 lab-smoke: ## Run the e2e suite through the public HTTPS URL
 	@$(MAKE) --no-print-directory test-e2e E2E_BASE_URL=https://jungle.lab.fredzol.io
+
+# ---------- Load ----------
+.PHONY: load-test
+load-test: ## k6 load test through the edge (stack up; VUS, DURATION, WALLETS overridable)
+	@tmp=$$(mktemp -d -p $(CURDIR) .e2e-XXXXXX) && trap 'rm -rf $$tmp' EXIT && \
+	docker run --rm -v jungle_provisioned:/p:ro -v $$tmp:/out alpine sh -c 'cp /p/keycloak/clients.json /out/ && chmod 644 /out/clients.json && chmod 777 /out' && \
+	docker run --rm --network jungle_net -v $$tmp:/secrets:ro -v $(CURDIR)/test/load:/scripts:ro \
+	  -e VUS=$(or $(VUS),20) -e DURATION=$(or $(DURATION),60s) -e WALLETS=$(or $(WALLETS),50) \
+	  grafana/k6:2.3.0 run --summary-export=/secrets/summary.json /scripts/wagering.js && \
+	cp $$tmp/summary.json $(CURDIR)/test/load/last-summary.json
 
 # ---------- Go ----------
 .PHONY: build fmt vet test test-race test-integration test-e2e test-system

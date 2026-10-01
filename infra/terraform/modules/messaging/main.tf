@@ -56,11 +56,13 @@ resource "aws_sqs_queue" "audit_dlq" {
   message_retention_seconds   = local.fifo_dlq_retention
 }
 
+# Sample subscriber, read only by tests/demos: short retention keeps it bounded.
 resource "aws_sqs_queue" "audit" {
   name                        = "wager-events-audit.fifo"
   fifo_queue                  = true
   content_based_deduplication = false
   visibility_timeout_seconds  = 30
+  message_retention_seconds   = 3600
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.audit_dlq.arn
     maxReceiveCount     = 5
