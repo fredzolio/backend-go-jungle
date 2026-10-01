@@ -1,0 +1,29 @@
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+!*.tfvars.example
+
+# Go
+/bin/
+/dist/
+coverage.out
+*.test
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Agent tooling
+.omo/
+.codegraph

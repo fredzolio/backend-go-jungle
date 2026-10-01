@@ -1,0 +1,30 @@
+# Static configuration of the stack edge.
+#  web   :8080 -> published on 127.0.0.1:${JUNGLE_HTTP_PORT}; the host Caddy proxies the public hostname here
+#  admin :8090 -> published on 127.0.0.1:${JUNGLE_ADMIN_PORT}; private (SSH tunnel / Tailscale)
+entryPoints:
+  web:
+    address: ":8080"
+    forwardedHeaders:
+      trustedIPs: ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+  admin:
+    address: ":8090"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+
+api:
+  dashboard: true
+
+ping:
+  entryPoint: admin
+
+log:
+  format: json
+  level: INFO
+
+accessLog:
+  format: json
+  fields:
+    headers:
+      defaultMode: drop
