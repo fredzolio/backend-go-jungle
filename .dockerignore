@@ -1,0 +1,13 @@
+.git
+.github
+.omo
+.codegraph
+.env
+.env.*
+bin
+dist
+docs
+infra
+*.md
+compose*.yaml
+Makefile

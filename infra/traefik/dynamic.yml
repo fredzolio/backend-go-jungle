@@ -1,0 +1,46 @@
+http:
+  routers:
+    # Public: only the realm endpoints (token, JWKS, discovery). Admin console stays private.
+    keycloak-realm:
+      entryPoints: [web]
+      rule: "PathPrefix(`/auth/realms/`) || PathPrefix(`/auth/resources/`)"
+      service: keycloak
+      priority: 100
+    api:
+      entryPoints: [web]
+      rule: "PathPrefix(`/`)"
+      service: jungle-api
+      middlewares: [rate-limit]
+      priority: 1
+
+    # Private entrypoint.
+    keycloak-admin:
+      entryPoints: [admin]
+      rule: "PathPrefix(`/auth`)"
+      service: keycloak
+    dashboard:
+      entryPoints: [admin]
+      rule: "PathPrefix(`/api`) || PathPrefix(`/dashboard`)"
+      service: api@internal
+
+  middlewares:
+    rate-limit:
+      rateLimit:
+        average: 200
+        burst: 400
+
+  services:
+    keycloak:
+      loadBalancer:
+        servers:
+          - url: "http://keycloak:8080"
+    jungle-api:
+      loadBalancer:
+        healthCheck:
+          path: /health/ready
+          interval: 2s
+          timeout: 1s
+        servers:
+          - url: "http://api-1:8080"
+          - url: "http://api-2:8080"
+          - url: "http://api-3:8080"

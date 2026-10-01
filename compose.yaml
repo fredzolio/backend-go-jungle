@@ -1,0 +1,192 @@
+# Jungle wallet — isolated environment. Everything belongs to project "jungle":
+# containers jungle-*, network jungle_net, volumes jungle_*. Host ports bind to 127.0.0.1 only.
+#   up:      docker compose up --build -d      (or: make up)
+#   down:    docker compose down               (keeps data)
+#   destroy: docker compose down -v --rmi local (or: make destroy)
+name: jungle
+
+x-hardening: &hardening
+  security_opt: ["no-new-privileges:true"]
+  networks: [net]
+
+x-api: &api
+  <<: *hardening
+  image: jungle/api:local
+  pull_policy: never
+  restart: unless-stopped
+  read_only: true
+  depends_on:
+    provisioner:
+      condition: service_completed_successfully
+  volumes:
+    - provisioned:/provisioned:ro
+  healthcheck:
+    test: ["CMD", "/jungle", "healthcheck"]
+    interval: 5s
+    timeout: 3s
+    retries: 10
+    start_period: 10s
+  stop_grace_period: 30s
+  mem_limit: 128m
+
+x-api-env: &api-env
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DB_HOST: postgres
+  DB_NAME: jungle
+  DB_USER: jungle_app
+  DB_PASSWORD_FILE: /provisioned/db/app_password
+  AWS_ENDPOINT_URL: http://ministack:4566
+  AWS_REGION: us-east-1
+  AWS_CONSUMER_ACCESS_KEY_ID_FILE: /provisioned/aws/consumer/access_key_id
+  AWS_CONSUMER_SECRET_ACCESS_KEY_FILE: /provisioned/aws/consumer/secret_access_key
+
+services:
+  postgres:
+    <<: *hardening
+    image: postgres:17.11-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres-local}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak-local}
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "max_connections=200", "-c", "log_min_duration_statement=500"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${JUNGLE_PG_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    mem_limit: 384m
+
+  keycloak:
+    <<: *hardening
+    image: jungle/keycloak:local
+    build:
+      context: infra/keycloak
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak-local}
+      # Issuer is always the public URL, whether the token is requested through the edge
+      # or directly at keycloak:8080 (backchannel stays dynamic for in-network callers).
+      KC_HOSTNAME: ${PUBLIC_BASE_URL:-http://localhost:18080}/auth
+      KC_HOSTNAME_ADMIN: ${ADMIN_BASE_URL:-http://localhost:18090}/auth
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin-local}
+      JAVA_OPTS_KC_HEAP: "-XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=20"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+    mem_limit: 900m
+
+  ministack:
+    <<: *hardening
+    image: ministackorg/ministack:1.5.19
+    restart: unless-stopped
+    environment:
+      AUTH: "true"
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: ${MINISTACK_ROOT_SECRET:-test}
+      MINISTACK_HOST: ministack
+      MINISTACK_REGION: us-east-1
+      PERSIST_STATE: "1"
+      STATE_DIR: /data/state
+    volumes:
+      - ministack:/data
+    ports:
+      - "127.0.0.1:${JUNGLE_MINISTACK_PORT:-14566}:4566"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4566/_ministack/health', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    mem_limit: 256m
+
+  provisioner:
+    <<: *hardening
+    image: jungle/provisioner:local
+    build:
+      context: infra/terraform
+      dockerfile: runner.Dockerfile
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      ministack:
+        condition: service_healthy
+    environment:
+      TF_VAR_postgres_superuser_password: ${POSTGRES_PASSWORD:-postgres-local}
+      TF_VAR_keycloak_admin_password: ${KEYCLOAK_ADMIN_PASSWORD:-admin-local}
+      TF_VAR_aws_root_secret_key: ${MINISTACK_ROOT_SECRET:-test}
+    volumes:
+      - tfstate:/state
+      - provisioned:/provisioned
+    mem_limit: 768m
+
+  api-1:
+    <<: *api
+    build:
+      context: .
+    environment:
+      <<: *api-env
+      INSTANCE_ID: api-1
+  api-2:
+    <<: *api
+    environment:
+      <<: *api-env
+      INSTANCE_ID: api-2
+  api-3:
+    <<: *api
+    environment:
+      <<: *api-env
+      INSTANCE_ID: api-3
+
+  edge:
+    <<: *hardening
+    image: traefik:v3.7.13
+    restart: unless-stopped
+    read_only: true
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - ./infra/traefik:/etc/traefik:ro
+    ports:
+      - "127.0.0.1:${JUNGLE_HTTP_PORT:-18080}:8080"
+      - "127.0.0.1:${JUNGLE_ADMIN_PORT:-18090}:8090"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 128m
+
+networks:
+  net:
+    name: jungle_net
+
+volumes:
+  pgdata:
+    name: jungle_pgdata
+  tfstate:
+    name: jungle_tfstate
+  provisioned:
+    name: jungle_provisioned
+  ministack:
+    name: jungle_ministack
