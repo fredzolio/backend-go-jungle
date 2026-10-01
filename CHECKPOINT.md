@@ -15,6 +15,8 @@
 1. Ler este arquivo inteiro (principalmente §4 Fases e §7 Log).
 2. `git log --oneline -15` para ver onde parou.
 3. `make up` sobe o ambiente; `make ps` confere saúde; `make down` desliga.
+   Testes: `make test-race` (unitários) e `make test-integration` (Docker; containers efêmeros via testcontainers).
+   Verificação estática: `GOTOOLCHAIN=go1.27.1 gopls check $(find cmd internal migrations -name '*.go')`.
 4. Continuar a primeira caixa `[ ]` da fase marcada como **EM ANDAMENTO**.
 5. Ao terminar um bloco: marcar caixas, registrar no §7 e commitar.
 
@@ -96,15 +98,22 @@ Interpretações registradas na F1 (para o ARCHITECTURE.md):
 - `ROLLBACK` de `BET` credita; de `WIN`/`REFUND` debita (falta de saldo → `REVERSAL_INSUFFICIENT_FUNDS`).
 - Moedas suportadas: BRL, USD, EUR (todas com 2 casas).
 
-### F2 — Persistência — **PRÓXIMA**
-- [ ] Migrations goose (up/down) + `jungle migrate up|down|status`
-- [ ] Constraints, índices parciais, FK composta ledger→transação
-- [ ] Triggers: imutabilidade do ledger, terminal imutável, cadeia do ledger, saldo=último lançamento (DEFERRED)
-- [ ] REVOKE para `jungle_app`; `FOR NO KEY UPDATE`
-- [ ] Repositórios pgx + TxManager + classificação de erros PG (transitório × permanente)
-- [ ] Testes de integração das constraints (DB real)
+### F2 — Persistência — **CONCLUÍDA** (2026-10-01)
+- [x] Migrations goose embutidas (up/down) + `jungle migrate up|down|reset|status`; serviço `migrate` no compose (role `jungle_owner`) antes das APIs; `make migrate-status|migrate-up|migrate-down`
+- [x] Constraints: CHECKs por origem/tipo/estado, índices únicos parciais (idempotência por provider, uma OPENING por carteira, **reversão bem-sucedida única por referência, sem `kind`**), FK composta ledger→transação `(id, wallet, currency, amount)` e ledger→carteira `(id, currency)`
+- [x] Triggers: carteira (identidade imutável, versão +1 só com saldo, sem DELETE/TRUNCATE), transação (terminal imutável, identidade imutável, não volta a PENDING), ledger (append-only, cadeia contínua), outbox (conteúdo imutável), e **constraint triggers DEFERRED** saldo/versão da carteira = último lançamento
+- [x] Privilégios: `jungle_app` só INSERT/SELECT no ledger, sem DELETE em nada, sem acesso à tabela do goose (conferido no ambiente real)
+- [x] Session timeouts por conexão (`lock_timeout` 5s, `statement_timeout` 15s, `idle_in_transaction_session_timeout` 30s); `FOR NO KEY UPDATE` na carteira
+- [x] Ports da aplicação (`UnitOfWork`, stores) + adapters pgx (wallets, transactions, ledger, outbox) + classificação de erros (`ErrTransient`/`ErrIntegrity`/`ErrNotFound`/`ErrWalletExists`/`ErrConcurrentUpdate`)
+- [x] Harness de integração (`internal/testsupport/pgtest`, build tag `integration`): Postgres real via testcontainers, papéis espelhando o Terraform, template migrado clonado por teste
+- [x] 14 testes de integração: migrations reversíveis, invariantes da carteira, ledger append-only (owner→trigger, app→sem privilégio), FK composta, cadeia, divergência carteira×ledger no commit, imutabilidade/OPENING única/reversão única, idempotência por provider, wallet inexistente, versão obsoleta, lock timeout → transitório, paginação do ledger
 
-### F3 — Casos de uso núcleo — pendente
+Notas da F2:
+- A FK de `wager_transactions` é só `wallet_id` (não `(wallet_id, currency)`): uma rejeição `CURRENCY_MISMATCH` precisa ser persistida para auditoria; a consistência de moeda das movimentações reais fica nas FKs compostas do ledger.
+- Bug real encontrado pelos testes de integração e corrigido: `CASE` com `NEW.wallet_id` no trigger diferido falhava em linhas de `wallets` (PL/pgSQL) → `IF/ELSE`. A migration 00003 foi editada antes da entrega; o banco local foi resetado com `migrate reset` + `up` (demonstra a reversão).
+- Mutação de controle: com `kind` no índice de reversão, o teste de reversão única falha (como esperado).
+
+### F3 — Casos de uso núcleo — **PRÓXIMA**
 - [ ] OpenWallet (OPENING + ledger + outbox no mesmo commit; saldo 0 sem OPENING)
 - [ ] Submit BET/WIN/LOSS síncrono com idempotência (`ON CONFLICT DO NOTHING`)
 - [ ] Concorrência: 50× mesma aposta; 80+80 sobre 100; carteiras paralelas
@@ -149,7 +158,7 @@ Interpretações registradas na F1 (para o ARCHITECTURE.md):
 
 ## 5. Lições dos forks (checklist de regressão)
 
-- [~] Índice de reversão **sem** `kind` (regra de domínio feita na F1; índice no banco na F2)
+- [x] Índice de reversão **sem** `kind` (domínio na F1, índice no banco na F2, com teste e mutação de controle)
 - [ ] Todo `SKIP LOCKED` dentro de transação com UPDATE de claim
 - [ ] Nunca I/O de rede com transação SQL aberta
 - [ ] `MessageGroupId = walletId`; claim da outbox por cabeça de partição; batch FIFO bloqueia grupo após falha
@@ -178,3 +187,4 @@ Observação: o Keycloak responde 503 (bootstrap) por alguns segundos depois do 
 | 2026-10-01 | — | Pesquisa, arquitetura e estudo de 12 forks concluídos | Iniciar F0 |
 | 2026-10-01 | F0 | Fundação completa: compose isolado, Terraform provisionando Keycloak/MiniStack/Postgres, esqueleto Fx com health, edge Traefik, spikes executados | F1: domínio puro (Money primeiro) |
 | 2026-10-01 | F1 | Domínio puro completo (money, wallet, wagering, events) com testes unitários, fuzz, vetores golden e guardas arquiteturais; `go test -race` verde | F2: migrations goose + constraints/triggers + repositórios pgx |
+| 2026-10-01 | F2 | Persistência completa: 5 migrations reversíveis, invariantes no banco, privilégios mínimos, stores pgx, harness testcontainers + 14 testes de integração; gopls v0.23.0 instalado (`~/go/bin`, symlink em `~/.cargo/bin`) | F3: OpenWallet + Submit (BET/WIN/LOSS) + concorrência |

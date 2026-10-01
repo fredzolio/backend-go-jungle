@@ -1,7 +1,8 @@
 // Command jungle is the single binary of the wallet service.
 //
-//	jungle serve        run the service (default)
-//	jungle healthcheck  probe the local liveness endpoint (container healthcheck)
+//	jungle serve                         run the service (default)
+//	jungle migrate up|down|reset|status  apply or revert database migrations
+//	jungle healthcheck                   probe the local liveness endpoint (container healthcheck)
 package main
 
 import (
@@ -12,6 +13,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/fredzolio/backend-go-jungle/internal/adapters/postgres"
 	"github.com/fredzolio/backend-go-jungle/internal/bootstrap"
 	"github.com/fredzolio/backend-go-jungle/internal/platform/config"
 	"github.com/fredzolio/backend-go-jungle/internal/platform/logging"
@@ -29,10 +31,12 @@ func run(args []string) int {
 	switch cmd {
 	case "serve":
 		return serve()
+	case "migrate":
+		return migrate(args[1:])
 	case "healthcheck":
 		return healthcheck()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q (expected: serve | healthcheck)\n", cmd)
+		fmt.Fprintf(os.Stderr, "unknown command %q (expected: serve | migrate | healthcheck)\n", cmd)
 		return 2
 	}
 }
@@ -62,6 +66,25 @@ func serve() int {
 		return 1
 	}
 	return signal.ExitCode
+}
+
+func migrate(args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintf(os.Stderr, "usage: jungle migrate %s\n", postgres.MigrateCommands)
+		return 2
+	}
+	cfg, err := config.LoadMigrator()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
+	defer cancel()
+	if err := postgres.Migrate(ctx, cfg.Postgres.DSN(cfg.InstanceID), args[0], os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, "migrate:", err)
+		return 1
+	}
+	return 0
 }
 
 func healthcheck() int {

@@ -51,6 +51,28 @@ type Postgres struct {
 	Password string `env:"PASSWORD_FILE,file,required"`
 	Port     uint16 `env:"PORT"      envDefault:"5432"`
 	MaxConns int32  `env:"MAX_CONNS" envDefault:"10"`
+	// Session defaults: a transaction blocked on a row lock or a slow statement
+	// fails fast (classified as transient) instead of hanging.
+	LockTimeout      time.Duration `env:"LOCK_TIMEOUT"      envDefault:"5s"`
+	StatementTimeout time.Duration `env:"STATEMENT_TIMEOUT" envDefault:"15s"`
+}
+
+// Migrator is the configuration of `jungle migrate` (owner role, no AWS).
+type Migrator struct {
+	InstanceID string        `env:"INSTANCE_ID"   envDefault:"migrate"`
+	LogLevel   slog.Level    `env:"LOG_LEVEL"     envDefault:"info"`
+	Postgres   Postgres      `envPrefix:"DB_"`
+	Timeout    time.Duration `env:"MIGRATE_TIMEOUT" envDefault:"2m"`
+}
+
+// LoadMigrator parses the migrator configuration.
+func LoadMigrator() (Migrator, error) {
+	cfg, err := env.ParseAs[Migrator]()
+	if err != nil {
+		return Migrator{}, fmt.Errorf("parse environment: %w", err)
+	}
+	cfg.Postgres.Password = strings.TrimSpace(cfg.Postgres.Password)
+	return cfg, nil
 }
 
 // AWS configures SQS/SNS access. EndpointURL points to MiniStack locally and is
@@ -91,6 +113,9 @@ func (p Postgres) DSN(instanceID string) string {
 	q := url.Values{}
 	q.Set("sslmode", "disable")
 	q.Set("application_name", "jungle-"+instanceID)
+	q.Set("lock_timeout", strconv.FormatInt(p.LockTimeout.Milliseconds(), 10))
+	q.Set("statement_timeout", strconv.FormatInt(p.StatementTimeout.Milliseconds(), 10))
+	q.Set("idle_in_transaction_session_timeout", "30000")
 	u.RawQuery = q.Encode()
 	return u.String()
 }

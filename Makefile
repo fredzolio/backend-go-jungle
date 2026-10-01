@@ -10,7 +10,7 @@ help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 # ---------- environment lifecycle ----------
-.PHONY: up down destroy ps logs provision outputs
+.PHONY: up down destroy ps logs provision outputs migrate-status migrate-down migrate-up
 up: ## Build and start the whole environment (detached)
 	$(COMPOSE) up --build -d --wait
 
@@ -32,8 +32,17 @@ provision: ## Re-run Terraform provisioning (idempotent)
 outputs: ## Show non-sensitive Terraform outputs
 	$(COMPOSE) run --rm provisioner output
 
+migrate-status: ## Show applied/pending migrations
+	$(COMPOSE) run --rm migrate migrate status
+
+migrate-up: ## Apply pending migrations
+	$(COMPOSE) run --rm migrate migrate up
+
+migrate-down: ## Revert the latest migration
+	$(COMPOSE) run --rm migrate migrate down
+
 # ---------- Go ----------
-.PHONY: build fmt vet test test-race
+.PHONY: build fmt vet test test-race test-integration
 build: ## Compile all packages
 	go build ./...
 
@@ -48,6 +57,9 @@ test: ## Unit tests
 
 test-race: ## Unit tests with the race detector
 	go test -race -shuffle=on -count=1 ./...
+
+test-integration: ## Integration tests against real containers (Docker required)
+	go test -tags=integration -race -count=1 ./...
 
 # ---------- Terraform ----------
 TF_IMAGE := hashicorp/terraform:1.16.4
