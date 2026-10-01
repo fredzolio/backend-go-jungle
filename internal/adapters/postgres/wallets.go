@@ -37,6 +37,16 @@ func (s walletStore) GetForUpdate(ctx context.Context, id uuid.UUID) (*wallet.Wa
 	return s.get(ctx, `SELECT `+walletColumns+` FROM wallets WHERE id = $1 FOR NO KEY UPDATE`, id)
 }
 
+// TryGetForUpdate is GetForUpdate with SKIP LOCKED: a busy wallet is skipped,
+// never waited for.
+func (s walletStore) TryGetForUpdate(ctx context.Context, id uuid.UUID) (*wallet.Wallet, bool, error) {
+	w, err := s.get(ctx, `SELECT `+walletColumns+` FROM wallets WHERE id = $1 FOR NO KEY UPDATE SKIP LOCKED`, id)
+	if errors.Is(err, app.ErrNotFound) {
+		return nil, false, nil
+	}
+	return w, err == nil, err
+}
+
 func (s walletStore) get(ctx context.Context, query string, id uuid.UUID) (*wallet.Wallet, error) {
 	var (
 		snap     wallet.Snapshot

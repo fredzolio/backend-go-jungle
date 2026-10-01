@@ -37,16 +37,17 @@ func TestMain(m *testing.M) {
 
 // fixture is one isolated database with the use cases wired to it.
 type fixture struct {
-	db       pgtest.DB
+	clock    app.Clock
 	wallets  *app.Wallets
 	wagering *app.Wagering
+	db       pgtest.DB
 }
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	db := env.NewDatabase(t)
 	deps := app.Deps{UoW: postgres.NewUnitOfWork(db.App), Clock: app.SystemClock{}, IDs: app.UUIDv7{}}
-	return fixture{db: db, wallets: app.NewWallets(deps), wagering: app.NewWagering(deps, app.DefaultReferencePolicy)}
+	return fixture{db: db, clock: deps.Clock, wallets: app.NewWallets(deps), wagering: app.NewWagering(deps, app.DefaultReferencePolicy)}
 }
 
 func amount(t *testing.T, value, currency string) money.Money {

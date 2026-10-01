@@ -19,10 +19,13 @@ import (
 type Config struct {
 	InstanceID string     `env:"INSTANCE_ID" envDefault:"local"`
 	LogLevel   slog.Level `env:"LOG_LEVEL"   envDefault:"info"`
-	HTTP       HTTP       `envPrefix:"HTTP_"`
-	Lifecycle  Lifecycle  `envPrefix:"LIFECYCLE_"`
-	Postgres   Postgres   `envPrefix:"DB_"`
-	AWS        AWS        `envPrefix:"AWS_"`
+	// Roles enabled in this process (same binary everywhere): resolver, ...
+	Roles     []string  `env:"ROLES" envDefault:"resolver" envSeparator:","`
+	HTTP      HTTP      `envPrefix:"HTTP_"`
+	Lifecycle Lifecycle `envPrefix:"LIFECYCLE_"`
+	Reference Reference `envPrefix:"REFERENCE_"`
+	Postgres  Postgres  `envPrefix:"DB_"`
+	AWS       AWS       `envPrefix:"AWS_"`
 }
 
 // HTTP configures the public API listener.
@@ -35,6 +38,26 @@ type HTTP struct {
 	// DrainDelay is how long readiness reports DOWN before the listener stops,
 	// giving the edge load balancer time to stop routing new requests here.
 	DrainDelay time.Duration `env:"DRAIN_DELAY" envDefault:"3s"`
+}
+
+// Reference configures the wait for references that have not arrived yet and the
+// resolver worker that retries them.
+type Reference struct {
+	InitialBackoff time.Duration `env:"INITIAL_BACKOFF"  envDefault:"1s"`
+	MaxBackoff     time.Duration `env:"MAX_BACKOFF"      envDefault:"1m"`
+	TTL            time.Duration `env:"TTL"              envDefault:"10m"`
+	PollInterval   time.Duration `env:"POLL_INTERVAL"    envDefault:"500ms"`
+	Batch          int           `env:"BATCH"            envDefault:"100"`
+}
+
+// HasRole reports whether a role is enabled.
+func (c Config) HasRole(role string) bool {
+	for _, r := range c.Roles {
+		if strings.TrimSpace(r) == role {
+			return true
+		}
+	}
+	return false
 }
 
 // Lifecycle bounds Fx start and stop.
