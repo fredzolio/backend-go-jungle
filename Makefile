@@ -45,7 +45,7 @@ migrate-down: ## Revert the latest migration
 	$(COMPOSE) run --rm migrate migrate down
 
 # ---------- Go ----------
-.PHONY: build fmt vet test test-race test-integration test-e2e
+.PHONY: build fmt vet test test-race test-integration test-e2e test-system
 build: ## Compile all packages
 	go build ./...
 
@@ -63,6 +63,9 @@ test-race: ## Unit tests with the race detector
 
 test-integration: ## Integration tests against real containers (Docker required)
 	go test -tags=integration -race -count=1 ./...
+
+test-system: ## Multi-process + crash scenarios: real binary (-race, faultinject) as independent processes
+	go test -tags=system -count=1 -timeout=15m -v ./test/system/...
 
 test-e2e: ## End-to-end tests against the running stack (make up first): real Keycloak tokens, real SQS
 	@tmp=$$(mktemp -d -p $(CURDIR) .e2e-XXXXXX) && trap 'rm -rf $$tmp' EXIT && \

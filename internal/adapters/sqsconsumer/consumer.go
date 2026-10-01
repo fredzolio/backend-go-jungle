@@ -13,6 +13,7 @@ import (
 
 	"github.com/fredzolio/backend-go-jungle/internal/app"
 	"github.com/fredzolio/backend-go-jungle/internal/domain/wagering"
+	"github.com/fredzolio/backend-go-jungle/internal/platform/faults"
 )
 
 // API is the subset of the SQS client the consumer uses.
@@ -121,6 +122,7 @@ func (c *Consumer) handle(ctx context.Context, m types.Message) bool {
 	attrs := []any{slog.String("sqsMessageId", aws.ToString(m.MessageId)), slog.String("outcome", reason)}
 	switch result {
 	case committed:
+		faults.Point("consumer.after_commit")
 		if err := c.delete(m); err != nil {
 			// Committed but still visible: the redelivery is an idempotent replay.
 			c.d.Log.Warn("delete after commit failed", append(attrs, slog.Any("error", err))...)
