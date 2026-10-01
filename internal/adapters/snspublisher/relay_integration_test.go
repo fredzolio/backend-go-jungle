@@ -105,7 +105,7 @@ func (r rig) relay(owner string, store app.OutboxRelayStore, pub app.EventPublis
 	if pub == nil {
 		pub = snspublisher.New(ministack.SNS(), r.topic.ARN)
 	}
-	return app.NewRelay(store, pub, r.clock, silent, owner, policy)
+	return app.NewRelay(app.RelayConfig{Store: store, Publisher: pub, Clock: r.clock, Log: silent, Owner: owner, Policy: policy})
 }
 
 func drain(t *testing.T, relay *app.Relay) {

@@ -93,3 +93,14 @@ func walletNotFound(err error) error {
 	}
 	return err
 }
+
+// PendingReferences counts transactions waiting for their reference (gauge).
+func (q *Queries) PendingReferences(ctx context.Context) (int64, error) {
+	var n int64
+	err := q.uow.Snapshot(ctx, func(ctx context.Context, tx Tx) error {
+		var err error
+		n, err = tx.Transactions().CountPendingReferences(ctx)
+		return err
+	})
+	return n, err
+}

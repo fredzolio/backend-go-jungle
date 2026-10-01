@@ -12,14 +12,15 @@ import (
 
 // Handlers implements the business routes.
 type Handlers struct {
-	Wallets  *app.Wallets
-	Wagering *app.Wagering
-	Queries  *app.Queries
-	Log      *slog.Logger
+	Wallets    *app.Wallets
+	Wagering   *app.Wagering
+	Queries    *app.Queries
+	Reconciler *app.Reconciler
+	Log        *slog.Logger
 }
 
 func (h Handlers) meta(r *http.Request) app.Meta {
-	return app.Meta{CorrelationID: correlationID(r.Context())}
+	return app.Meta{CorrelationID: correlationID(r.Context()), Channel: "http"}
 }
 
 type openWalletRequest struct {
@@ -105,4 +106,32 @@ func (h Handlers) ledger(w http.ResponseWriter, r *http.Request) {
 		out.NextCursor = &next
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+type reconciliationResponse struct {
+	StoredBalance     money.Money `json:"storedBalance"`
+	CalculatedBalance money.Money `json:"calculatedBalance"`
+	Difference        money.Money `json:"difference"`
+	CheckedEntries    int64       `json:"checkedEntries"`
+	WalletID          string      `json:"walletId"`
+	Consistent        bool        `json:"consistent"`
+	ChainIntact       bool        `json:"chainIntact"`
+}
+
+// reconcile: POST /wallets/{walletId}/reconciliation (read-only check).
+func (h Handlers) reconcile(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID("walletId", r.PathValue("walletId"))
+	if err != nil {
+		writeError(w, r, h.Log, err)
+		return
+	}
+	res, err := h.Reconciler.Reconcile(r.Context(), id)
+	if err != nil {
+		writeError(w, r, h.Log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, reconciliationResponse{
+		WalletID: res.WalletID.String(), StoredBalance: res.Stored, CalculatedBalance: res.Calculated,
+		Difference: res.Difference, Consistent: res.Consistent, ChainIntact: res.ChainIntact, CheckedEntries: res.CheckedEntries,
+	})
 }

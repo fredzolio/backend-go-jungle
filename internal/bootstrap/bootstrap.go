@@ -20,14 +20,18 @@ import (
 	"github.com/fredzolio/backend-go-jungle/internal/app"
 	"github.com/fredzolio/backend-go-jungle/internal/platform/config"
 	"github.com/fredzolio/backend-go-jungle/internal/platform/health"
+	"github.com/fredzolio/backend-go-jungle/internal/platform/metrics"
 	"github.com/fredzolio/backend-go-jungle/internal/workers"
 )
 
 const healthGroup = `group:"health_checks"`
 
 // New returns the full Fx application for an already-parsed configuration.
-func New(cfg config.Config, log *slog.Logger) *fx.App {
-	return fx.New(
+func New(cfg config.Config, log *slog.Logger) *fx.App { return fx.New(Options(cfg, log)) }
+
+// Options is the complete graph (exposed so tests can validate it).
+func Options(cfg config.Config, log *slog.Logger) fx.Option {
+	return fx.Options(
 		fx.Supply(cfg, log),
 		fx.WithLogger(func() fxevent.Logger { return &fxevent.SlogLogger{Logger: log} }),
 		fx.StartTimeout(cfg.Lifecycle.StartTimeout),
@@ -35,6 +39,7 @@ func New(cfg config.Config, log *slog.Logger) *fx.App {
 		platformModule,
 		postgresModule,
 		messagingModule,
+		metricsModule,
 		appModule,
 		httpModule,
 		fx.Options(roleModules(cfg)...),
@@ -53,16 +58,20 @@ func roleModules(cfg config.Config) []fx.Option {
 	if cfg.HasRole("outbox") {
 		opts = append(opts, outboxModule)
 	}
+	if cfg.HasRole("reconciler") {
+		opts = append(opts, reconcilerModule)
+	}
 	return opts
 }
 
 var appModule = fx.Module("app",
 	fx.Provide(
 		func(pool *pgxpool.Pool) app.UnitOfWork { return postgres.NewUnitOfWork(pool) },
-		func(uow app.UnitOfWork) app.Deps {
-			return app.Deps{UoW: uow, Clock: app.SystemClock{}, IDs: app.UUIDv7{}}
+		func(uow app.UnitOfWork, m app.Metrics) app.Deps {
+			return app.Deps{UoW: uow, Clock: app.SystemClock{}, IDs: app.UUIDv7{}, Metrics: m}
 		},
 		app.NewWallets,
+		app.NewReconciler,
 		app.NewQueries,
 		func(d app.Deps, cfg config.Config) *app.Wagering {
 			r := cfg.Reference
@@ -72,7 +81,7 @@ var appModule = fx.Module("app",
 )
 
 var consumerModule = fx.Module("consumer",
-	fx.Invoke(func(lc fx.Lifecycle, client awsx.ConsumerSQS, uc *app.Wagering, cfg config.Config, log *slog.Logger) error {
+	fx.Invoke(func(lc fx.Lifecycle, client awsx.ConsumerSQS, uc *app.Wagering, cfg config.Config, log *slog.Logger, p *metrics.Prom) error {
 		c := cfg.Consumer
 		senders, err := sqsconsumer.LoadSenders(c.SendersFile, c.TrustedAccounts)
 		if err != nil {
@@ -87,7 +96,7 @@ var consumerModule = fx.Module("consumer",
 			if err != nil {
 				return
 			}
-			sqsconsumer.New(client, uc, senders, log, sqsconsumer.Config{
+			sqsconsumer.New(sqsconsumer.Deps{API: client, Ingest: uc, Senders: senders, Log: log, Observer: p}, sqsconsumer.Config{
 				QueueURL: queue, DLQURL: dlq, ConsumerName: c.Name, ProcessTimeout: c.ProcessTimeout,
 				MaxBackoff: c.MaxBackoff, MaxMessages: c.MaxMessages, WaitSeconds: c.WaitSeconds,
 			}).Run(ctx)
@@ -98,11 +107,30 @@ var consumerModule = fx.Module("consumer",
 
 var outboxModule = fx.Module("outbox",
 	fx.Provide(awsx.NewPublisherSNS),
-	fx.Invoke(func(lc fx.Lifecycle, pool *pgxpool.Pool, client awsx.PublisherSNS, cfg config.Config, log *slog.Logger) {
+	fx.Invoke(func(lc fx.Lifecycle, pool *pgxpool.Pool, client awsx.PublisherSNS, cfg config.Config, log *slog.Logger, m app.Metrics) {
 		o := cfg.Outbox
-		relay := app.NewRelay(postgres.NewOutboxRelay(pool), snspublisher.New(client, cfg.AWS.EventsTopic), app.SystemClock{}, log,
-			cfg.InstanceID, app.RelayPolicy{Lease: o.Lease, InitialBackoff: o.InitialBackoff, MaxBackoff: o.MaxBackoff, MaxAttempts: o.MaxAttempts})
+		relay := app.NewRelay(app.RelayConfig{
+			Store: postgres.NewOutboxRelay(pool), Publisher: snspublisher.New(client, cfg.AWS.EventsTopic),
+			Clock: app.SystemClock{}, Metrics: m, Log: log, Owner: cfg.InstanceID,
+			Policy: app.RelayPolicy{Lease: o.Lease, InitialBackoff: o.InitialBackoff, MaxBackoff: o.MaxBackoff, MaxAttempts: o.MaxAttempts},
+		})
 		workers.Poller{Name: "outbox-relay", Run: relay.RunOnce, Log: log, Interval: o.PollInterval, Batch: o.Batch}.Register(lc)
+	}),
+)
+
+// useCases groups the application services injected into the HTTP adapter.
+type useCases struct {
+	fx.In
+
+	Wallets    *app.Wallets
+	Wagering   *app.Wagering
+	Queries    *app.Queries
+	Reconciler *app.Reconciler
+}
+
+var reconcilerModule = fx.Module("reconciler",
+	fx.Invoke(func(lc fx.Lifecycle, r *app.Reconciler, cfg config.Config, log *slog.Logger) {
+		workers.Poller{Name: "reconciliation-sweep", Run: r.Sweep, Log: log, Interval: cfg.ReconcileInterval, Batch: 200}.Register(lc)
 	}),
 )
 
@@ -138,9 +166,9 @@ var httpModule = fx.Module("http",
 		func(cfg config.Config) (httpapi.TokenVerifier, error) {
 			return oidc.NewVerifier(oidc.Config{Issuer: cfg.OIDC.Issuer, JWKSURL: cfg.OIDC.JWKSURL, Audience: cfg.OIDC.Audience})
 		},
-		func(h *health.Registry, v httpapi.TokenVerifier, log *slog.Logger, w *app.Wallets, wg *app.Wagering, q *app.Queries) http.Handler {
-			return httpapi.NewHandler(httpapi.Routes{Health: h, Verifier: v, Log: log,
-				Handlers: httpapi.Handlers{Wallets: w, Wagering: wg, Queries: q, Log: log}})
+		func(h *health.Registry, v httpapi.TokenVerifier, log *slog.Logger, p *metrics.Prom, uc useCases) http.Handler {
+			return httpapi.NewHandler(httpapi.Routes{Health: h, Verifier: v, Observer: p, Log: log,
+				Handlers: httpapi.Handlers{Wallets: uc.Wallets, Wagering: uc.Wagering, Queries: uc.Queries, Reconciler: uc.Reconciler, Log: log}})
 		},
 	),
 	fx.Invoke(httpapi.RegisterServer),

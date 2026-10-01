@@ -70,3 +70,20 @@ func rehydrateEntry(d wallet.LedgerEntryData, direction, currency string, minors
 	d.CreatedAt = d.CreatedAt.UTC()
 	return wallet.NewLedgerEntry(d)
 }
+
+// Summary runs in the caller's (snapshot) transaction: one statement computes the
+// rebuilt balance, the entry count and the first chain break (lag window).
+func (s ledgerStore) Summary(ctx context.Context, walletID uuid.UUID) (app.LedgerSummary, error) {
+	var sum app.LedgerSummary
+	err := s.q.QueryRow(ctx, `
+		WITH entries AS (
+			SELECT direction, amount_minor, balance_before_minor, wallet_version,
+			       lag(balance_after_minor) OVER (ORDER BY wallet_version) AS previous_after
+			  FROM wallet_ledger_entries WHERE wallet_id = $1
+		)
+		SELECT coalesce(sum(CASE direction WHEN 'CREDIT' THEN amount_minor ELSE -amount_minor END), 0)::bigint,
+		       count(*),
+		       coalesce(min(wallet_version) FILTER (WHERE previous_after IS NOT NULL AND balance_before_minor <> previous_after), 0)::bigint
+		  FROM entries`, walletID).Scan(&sum.BalanceMinor, &sum.Entries, &sum.FirstBreak)
+	return sum, classify("ledger summary", err)
+}

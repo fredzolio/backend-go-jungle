@@ -10,15 +10,18 @@ help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 # ---------- environment lifecycle ----------
-.PHONY: up down destroy ps logs provision outputs migrate-status migrate-down migrate-up
+.PHONY: up down destroy ps logs provision outputs migrate-status migrate-down migrate-up obs-up
 up: ## Build and start the whole environment (detached)
 	$(COMPOSE) up --build -d --wait
 
 down: ## Stop the environment, keeping data volumes
-	$(COMPOSE) down
+	$(COMPOSE) --profile obs down
 
 destroy: ## Stop and delete EVERYTHING of this environment (containers, volumes, local images)
-	$(COMPOSE) down -v --rmi local --remove-orphans
+	$(COMPOSE) --profile obs down -v --rmi local --remove-orphans
+
+obs-up: ## Start Prometheus (127.0.0.1:19090) and Grafana (127.0.0.1:13000)
+	$(COMPOSE) --profile obs up -d prometheus grafana
 
 ps: ## Service status
 	$(COMPOSE) ps

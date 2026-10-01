@@ -40,26 +40,35 @@ type Config struct {
 	WaitSeconds    int32
 }
 
+// Observer receives one outcome per handled message (metrics).
+type Observer interface {
+	MessageHandled(outcome string, duplicate bool)
+}
+
+// Deps are the collaborators of a consumer.
+type Deps struct {
+	API      API
+	Ingest   Ingester
+	Senders  *Senders
+	Log      *slog.Logger
+	Observer Observer
+}
+
 // Consumer polls the ingress queue.
 type Consumer struct {
-	api     API
-	ingest  Ingester
-	senders *Senders
-	log     *slog.Logger
-	cfg     Config
+	d   Deps
+	cfg Config
 }
 
 // New builds a consumer.
-func New(api API, ingest Ingester, senders *Senders, log *slog.Logger, cfg Config) *Consumer {
-	return &Consumer{api: api, ingest: ingest, senders: senders, log: log, cfg: cfg}
-}
+func New(d Deps, cfg Config) *Consumer { return &Consumer{d: d, cfg: cfg} }
 
 // Run polls until ctx is cancelled. Cancellation stops fetching immediately; a
 // message already being handled finishes (bounded by ProcessTimeout) and the
 // rest of its batch is released for immediate redelivery elsewhere.
 func (c *Consumer) Run(ctx context.Context) {
 	for ctx.Err() == nil {
-		out, err := c.api.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		out, err := c.d.API.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
 			QueueUrl: aws.String(c.cfg.QueueURL), MaxNumberOfMessages: c.cfg.MaxMessages, WaitTimeSeconds: c.cfg.WaitSeconds,
 			MessageSystemAttributeNames: []types.MessageSystemAttributeName{
 				types.MessageSystemAttributeNameSenderId, types.MessageSystemAttributeNameApproximateReceiveCount,
@@ -70,7 +79,7 @@ func (c *Consumer) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			c.log.Warn("receive failed", slog.Any("error", err))
+			c.d.Log.Warn("receive failed", slog.Any("error", err))
 			sleep(ctx, time.Second)
 			continue
 		}
@@ -107,53 +116,55 @@ const (
 func (c *Consumer) handle(ctx context.Context, m types.Message) bool {
 	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.cfg.ProcessTimeout)
 	defer cancel()
-	result, reason, err := c.process(pctx, m)
+	result, reason, duplicate, err := c.process(pctx, m)
+	c.d.Observer.MessageHandled(reason, duplicate)
 	attrs := []any{slog.String("sqsMessageId", aws.ToString(m.MessageId)), slog.String("outcome", reason)}
 	switch result {
 	case committed:
 		if err := c.delete(m); err != nil {
 			// Committed but still visible: the redelivery is an idempotent replay.
-			c.log.Warn("delete after commit failed", append(attrs, slog.Any("error", err))...)
+			c.d.Log.Warn("delete after commit failed", append(attrs, slog.Any("error", err))...)
 		}
 		return true
 	case poison:
-		c.log.Warn("message rejected to DLQ", append(attrs, slog.Any("error", err))...)
+		c.d.Log.Warn("message rejected to DLQ", append(attrs, slog.Any("error", err))...)
 		if dlqErr := c.toDLQ(m, reason); dlqErr != nil {
-			c.log.Error("dlq send failed; message kept", append(attrs, slog.Any("error", dlqErr))...)
+			c.d.Log.Error("dlq send failed; message kept", append(attrs, slog.Any("error", dlqErr))...)
 			return false
 		}
 		return true
 	default:
-		c.log.Warn("transient failure; message kept", append(attrs, slog.Any("error", err))...)
+		c.d.Log.Warn("transient failure; message kept", append(attrs, slog.Any("error", err))...)
 		c.changeVisibility(m, c.backoff(m))
 		return false
 	}
 }
 
-func (c *Consumer) process(ctx context.Context, m types.Message) (outcome, string, error) {
+func (c *Consumer) process(ctx context.Context, m types.Message) (outcome, string, bool, error) {
 	msg, err := parse(aws.ToString(m.Body))
 	if err != nil {
-		return poison, "MALFORMED", err
+		return poison, "MALFORMED", false, err
 	}
 	f := msg.request.Fields()
-	if err := c.senders.Authorize(m.Attributes[string(types.MessageSystemAttributeNameSenderId)], f.ProviderID); err != nil {
-		return poison, "UNAUTHORIZED_SENDER", err
+	if err := c.d.Senders.Authorize(m.Attributes[string(types.MessageSystemAttributeNameSenderId)], f.ProviderID); err != nil {
+		return poison, "UNAUTHORIZED_SENDER", false, err
 	}
-	res, err := c.ingest.Ingest(ctx, app.IngestCommand{
+	res, err := c.d.Ingest.Ingest(ctx, app.IngestCommand{
 		ConsumerName: c.cfg.ConsumerName, MessageID: msg.id, MessageHash: msg.hash,
 		Submit: app.SubmitCommand{
 			Request: msg.request, AuthenticatedProvider: f.ProviderID,
-			Meta: app.Meta{CorrelationID: msg.id, CausationID: aws.ToString(m.MessageId)},
+			Meta: app.Meta{CorrelationID: msg.id, CausationID: aws.ToString(m.MessageId), Channel: "sqs"},
 		},
 	})
 	if err != nil {
-		return classify(err)
+		result, code, err := classify(err)
+		return result, code, false, err
 	}
 	t := res.Submit.Transaction
-	c.log.Info("message handled", slog.String("messageId", msg.id), slog.String("transactionId", t.ID.String()),
+	c.d.Log.Info("message handled", slog.String("messageId", msg.id), slog.String("transactionId", t.ID.String()),
 		slog.String("walletId", t.WalletID.String()), slog.String("providerId", f.ProviderID),
 		slog.String("status", string(t.Status)), slog.Bool("duplicate", res.Duplicate), slog.Bool("replay", res.Submit.Replay))
-	return committed, string(t.Status), nil
+	return committed, string(t.Status), res.Duplicate, nil
 }
 
 // classify: definitive problems go to the DLQ at once; anything else is retried
@@ -191,17 +202,17 @@ func opContext() (context.Context, context.CancelFunc) {
 func (c *Consumer) delete(m types.Message) error {
 	ctx, cancel := opContext()
 	defer cancel()
-	_, err := c.api.DeleteMessage(ctx, &sqs.DeleteMessageInput{QueueUrl: aws.String(c.cfg.QueueURL), ReceiptHandle: m.ReceiptHandle})
+	_, err := c.d.API.DeleteMessage(ctx, &sqs.DeleteMessageInput{QueueUrl: aws.String(c.cfg.QueueURL), ReceiptHandle: m.ReceiptHandle})
 	return err
 }
 
 func (c *Consumer) changeVisibility(m types.Message, seconds int32) {
 	ctx, cancel := opContext()
 	defer cancel()
-	if _, err := c.api.ChangeMessageVisibility(ctx, &sqs.ChangeMessageVisibilityInput{
+	if _, err := c.d.API.ChangeMessageVisibility(ctx, &sqs.ChangeMessageVisibilityInput{
 		QueueUrl: aws.String(c.cfg.QueueURL), ReceiptHandle: m.ReceiptHandle, VisibilityTimeout: seconds,
 	}); err != nil {
-		c.log.Warn("change visibility failed", slog.String("sqsMessageId", aws.ToString(m.MessageId)), slog.Any("error", err))
+		c.d.Log.Warn("change visibility failed", slog.String("sqsMessageId", aws.ToString(m.MessageId)), slog.Any("error", err))
 	}
 }
 
@@ -212,7 +223,7 @@ func (c *Consumer) toDLQ(m types.Message, reason string) error {
 	if group == "" {
 		group = "poison"
 	}
-	_, err := c.api.SendMessage(ctx, &sqs.SendMessageInput{
+	_, err := c.d.API.SendMessage(ctx, &sqs.SendMessageInput{
 		QueueUrl: aws.String(c.cfg.DLQURL), MessageBody: m.Body, MessageGroupId: aws.String(group),
 		MessageDeduplicationId: m.MessageId,
 		MessageAttributes: map[string]types.MessageAttributeValue{

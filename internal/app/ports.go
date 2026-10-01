@@ -59,6 +59,8 @@ type WalletStore interface {
 	TryGetForUpdate(ctx context.Context, id uuid.UUID) (w *wallet.Wallet, ok bool, err error)
 	// Update writes balance/version guarded by expectedVersion.
 	Update(ctx context.Context, w *wallet.Wallet, expectedVersion int64) error
+	// IDsAfter pages wallet ids in ascending order (reconciliation sweep).
+	IDsAfter(ctx context.Context, after uuid.UUID, limit int) ([]uuid.UUID, error)
 }
 
 // DueTransaction identifies a PENDING_REFERENCE transaction ready for a retry.
@@ -90,6 +92,8 @@ type TransactionStore interface {
 	// DuePendingReferences lists PENDING_REFERENCE transactions due at now, oldest
 	// first, without locking (the caller locks wallet then transaction).
 	DuePendingReferences(ctx context.Context, now time.Time, limit int) ([]DueTransaction, error)
+	// CountPendingReferences counts transactions waiting for their reference.
+	CountPendingReferences(ctx context.Context) (int64, error)
 }
 
 // LedgerStore appends and reads ledger entries.
@@ -97,6 +101,18 @@ type LedgerStore interface {
 	Insert(ctx context.Context, e wallet.LedgerEntry) error
 	// List returns entries with wallet_version > afterVersion in ascending order.
 	List(ctx context.Context, walletID uuid.UUID, afterVersion int64, limit int) ([]wallet.LedgerEntry, error)
+	// Summary rebuilds the balance from the ledger and checks chain continuity.
+	Summary(ctx context.Context, walletID uuid.UUID) (LedgerSummary, error)
+}
+
+// LedgerSummary is the ledger-side view used by reconciliation.
+type LedgerSummary struct {
+	// BalanceMinor = sum(credits) - sum(debits), in minor units.
+	BalanceMinor int64
+	Entries      int64
+	// FirstBreak is the first wallet_version whose balance_before differs from the
+	// previous balance_after (0 when the chain is intact).
+	FirstBreak int64
 }
 
 // OutboxRecord is one integration event to publish after commit.

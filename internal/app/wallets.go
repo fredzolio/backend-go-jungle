@@ -13,9 +13,10 @@ import (
 
 // Deps are the collaborators shared by every use case.
 type Deps struct {
-	UoW   UnitOfWork
-	Clock Clock
-	IDs   IDs
+	UoW     UnitOfWork
+	Clock   Clock
+	IDs     IDs
+	Metrics Metrics // optional; NopMetrics when nil
 }
 
 // Wallets implements the internal wallet operations.

@@ -1,0 +1,6 @@
+apiVersion: 1
+providers:
+  - name: jungle
+    folder: Jungle
+    type: file
+    options: { path: /var/lib/grafana/dashboards }

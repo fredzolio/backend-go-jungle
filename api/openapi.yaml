@@ -71,6 +71,35 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /wallets/{walletId}/reconciliation:
+    post:
+      tags: [wallets]
+      summary: Reconcile a wallet (read-only)
+      description: |
+        Rebuilds the balance from the ledger (opening included) on one consistent snapshot
+        and compares it with the stored balance; also checks ledger chain continuity.
+        `difference` = stored − calculated. Divergences are logged and counted
+        (`jungle_reconciliations_total{result="divergent"}`). Nothing is changed.
+      security: [{ keycloak: [wallets.reconcile] }]
+      parameters: [{ $ref: '#/components/parameters/WalletId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  walletId: { type: string, format: uuid }
+                  storedBalance: { $ref: '#/components/schemas/Money' }
+                  calculatedBalance: { $ref: '#/components/schemas/SignedMoney' }
+                  difference: { $ref: '#/components/schemas/SignedMoney' }
+                  consistent: { type: boolean }
+                  chainIntact: { type: boolean }
+                  checkedEntries: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /wagering/transactions:
     post:
       tags: [wagering]

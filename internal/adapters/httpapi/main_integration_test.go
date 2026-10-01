@@ -137,7 +137,7 @@ func newAPI(t *testing.T) api {
 		Health: health.NewRegistry(silent, nil), Verifier: verifier, Log: silent,
 		Handlers: httpapi.Handlers{
 			Wallets: app.NewWallets(deps), Wagering: app.NewWagering(deps, app.DefaultReferencePolicy),
-			Queries: app.NewQueries(deps), Log: silent,
+			Queries: app.NewQueries(deps), Reconciler: app.NewReconciler(deps, silent), Log: silent,
 		},
 	})
 	srv := httptest.NewServer(handler)

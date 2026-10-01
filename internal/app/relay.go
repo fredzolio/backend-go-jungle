@@ -14,22 +14,38 @@ type RelayPolicy struct {
 	MaxAttempts    int // then the event is parked (dead_at) and alerted on
 }
 
+// RelayConfig wires a relay.
+type RelayConfig struct {
+	Store     OutboxRelayStore
+	Publisher EventPublisher
+	Clock     Clock
+	Metrics   Metrics
+	Log       *slog.Logger
+	Owner     string // instance id, recorded as locked_by
+	Policy    RelayPolicy
+}
+
 // Relay publishes committed outbox events. Any number of relays (in any process)
 // may run: claims are leased and fenced, publication happens outside SQL
 // transactions, and a crash at any point only causes a later republication of the
 // same eventId (consumers deduplicate by eventId; SNS FIFO also deduplicates it).
 type Relay struct {
-	store  OutboxRelayStore
-	pub    EventPublisher
-	clock  Clock
-	log    *slog.Logger
-	owner  string
-	policy RelayPolicy
+	store   OutboxRelayStore
+	pub     EventPublisher
+	clock   Clock
+	metrics Metrics
+	log     *slog.Logger
+	owner   string
+	policy  RelayPolicy
 }
 
-// NewRelay builds a relay identified by owner (instance id).
-func NewRelay(store OutboxRelayStore, pub EventPublisher, clock Clock, log *slog.Logger, owner string, policy RelayPolicy) *Relay {
-	return &Relay{store: store, pub: pub, clock: clock, log: log, owner: owner, policy: policy}
+// NewRelay builds a relay.
+func NewRelay(c RelayConfig) *Relay {
+	m := c.Metrics
+	if m == nil {
+		m = NopMetrics{}
+	}
+	return &Relay{store: c.Store, pub: c.Publisher, clock: c.Clock, metrics: m, log: c.Log, owner: c.Owner, policy: c.Policy}
 }
 
 // RunOnce claims, publishes and confirms one batch; it returns the batch size.
@@ -46,6 +62,7 @@ func (r *Relay) RunOnce(ctx context.Context, batch int) (int, error) {
 			if err := r.store.Reschedule(ctx, e, next, perr.Error(), dead); err != nil {
 				return len(events), err
 			}
+			r.metrics.OutboxFailed(dead)
 			r.log.WarnContext(ctx, "outbox publish failed", slog.String("eventId", e.ID.String()),
 				slog.String("eventType", e.EventType), slog.Int("attempts", e.Attempts), slog.Bool("dead", dead), slog.Any("error", perr))
 			continue
@@ -56,7 +73,9 @@ func (r *Relay) RunOnce(ctx context.Context, batch int) (int, error) {
 		}
 		if !ok {
 			r.log.WarnContext(ctx, "outbox lease lost after publish; it may be republished", slog.String("eventId", e.ID.String()))
+			continue
 		}
+		r.metrics.OutboxPublished(1)
 	}
 	return len(events), nil
 }
