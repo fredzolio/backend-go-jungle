@@ -8,6 +8,7 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 COPY migrations ./migrations
+COPY api ./api
 ARG BUILD_TAGS=""
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     go build -trimpath -tags "${BUILD_TAGS}" -ldflags="-s -w" -o /out/jungle ./cmd/jungle
