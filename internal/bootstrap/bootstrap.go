@@ -3,6 +3,7 @@
 package bootstrap
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/httpapi"
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/oidc"
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/postgres"
+	"github.com/fredzolio/backend-go-jungle/internal/adapters/sqsconsumer"
 	"github.com/fredzolio/backend-go-jungle/internal/app"
 	"github.com/fredzolio/backend-go-jungle/internal/platform/config"
 	"github.com/fredzolio/backend-go-jungle/internal/platform/health"
@@ -44,6 +46,9 @@ func roleModules(cfg config.Config) []fx.Option {
 	if cfg.HasRole("resolver") {
 		opts = append(opts, resolverModule)
 	}
+	if cfg.HasRole("consumer") {
+		opts = append(opts, consumerModule)
+	}
 	return opts
 }
 
@@ -60,6 +65,31 @@ var appModule = fx.Module("app",
 			return app.NewWagering(d, app.ReferencePolicy{InitialBackoff: r.InitialBackoff, MaxBackoff: r.MaxBackoff, TTL: r.TTL})
 		},
 	),
+)
+
+var consumerModule = fx.Module("consumer",
+	fx.Invoke(func(lc fx.Lifecycle, client awsx.ConsumerSQS, uc *app.Wagering, cfg config.Config, log *slog.Logger) error {
+		c := cfg.Consumer
+		senders, err := sqsconsumer.LoadSenders(c.SendersFile, c.TrustedAccounts)
+		if err != nil {
+			return err
+		}
+		workers.Loop{Name: "sqs-consumer", Copies: c.Pollers, Log: log, Run: func(ctx context.Context) {
+			queue, err := awsx.QueueURL(ctx, client.Client, cfg.AWS.IngressQueue)
+			if err != nil {
+				return
+			}
+			dlq, err := awsx.QueueURL(ctx, client.Client, cfg.AWS.IngressDLQ)
+			if err != nil {
+				return
+			}
+			sqsconsumer.New(client, uc, senders, log, sqsconsumer.Config{
+				QueueURL: queue, DLQURL: dlq, ConsumerName: c.Name, ProcessTimeout: c.ProcessTimeout,
+				MaxBackoff: c.MaxBackoff, MaxMessages: c.MaxMessages, WaitSeconds: c.WaitSeconds,
+			}).Run(ctx)
+		}}.Register(lc)
+		return nil
+	}),
 )
 
 var resolverModule = fx.Module("resolver",

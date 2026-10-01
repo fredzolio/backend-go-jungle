@@ -61,10 +61,10 @@ test-race: ## Unit tests with the race detector
 test-integration: ## Integration tests against real containers (Docker required)
 	go test -tags=integration -race -count=1 ./...
 
-test-e2e: ## End-to-end tests against the running stack (make up first) with real Keycloak tokens
-	@tmp=$$(mktemp) && trap 'rm -f $$tmp' EXIT && \
-	docker run --rm -v jungle_provisioned:/p:ro alpine cat /p/keycloak/clients.json > $$tmp && \
-	JUNGLE_CLIENTS_FILE=$$tmp go test -tags=e2e -count=1 -v ./test/e2e/...
+test-e2e: ## End-to-end tests against the running stack (make up first): real Keycloak tokens, real SQS
+	@tmp=$$(mktemp -d -p $(CURDIR) .e2e-XXXXXX) && trap 'rm -rf $$tmp' EXIT && \
+	docker run --rm -v jungle_provisioned:/p:ro -v $$tmp:/out alpine sh -c 'cp -r /p/. /out/ && chown -R $(shell id -u):$(shell id -g) /out' && \
+	JUNGLE_PROVISIONED_DIR=$$tmp go test -tags=e2e -count=1 -v ./test/e2e/...
 
 # ---------- Terraform ----------
 TF_IMAGE := hashicorp/terraform:1.16.4

@@ -27,3 +27,6 @@ coverage.out
 # Agent tooling
 .omo/
 .codegraph
+
+# e2e scratch (credentials copied from the provisioned volume)
+.e2e-*/

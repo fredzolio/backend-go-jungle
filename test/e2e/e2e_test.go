@@ -5,8 +5,9 @@
 //
 //	make up && make test-e2e
 //
-// Inputs: JUNGLE_BASE_URL (default http://localhost:18080) and JUNGLE_CLIENTS_FILE
-// (clients.json written by the provisioner; `make test-e2e` extracts it).
+// Inputs: JUNGLE_BASE_URL (default http://localhost:18080), JUNGLE_SQS_ENDPOINT
+// (default http://localhost:14566) and JUNGLE_PROVISIONED_DIR (credentials written
+// by the provisioner; `make test-e2e` copies them to a temporary directory).
 package e2e
 
 import (
@@ -38,11 +39,7 @@ func baseURL() string {
 
 func clients(t *testing.T) map[string]client {
 	t.Helper()
-	path := os.Getenv("JUNGLE_CLIENTS_FILE")
-	if path == "" {
-		t.Skip("JUNGLE_CLIENTS_FILE not set (run `make test-e2e`)")
-	}
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(provisioned(t, "keycloak/clients.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +48,15 @@ func clients(t *testing.T) map[string]client {
 		t.Fatal(err)
 	}
 	return out
+}
+
+func provisioned(t *testing.T, rel string) string {
+	t.Helper()
+	dir := os.Getenv("JUNGLE_PROVISIONED_DIR")
+	if dir == "" {
+		t.Skip("JUNGLE_PROVISIONED_DIR not set (run `make test-e2e`)")
+	}
+	return dir + "/" + rel
 }
 
 func token(t *testing.T, id string) string {
