@@ -1,0 +1,271 @@
+openapi: 3.1.0
+info:
+  title: Jungle Wallet API
+  version: 1.0.0
+  description: |
+    Wallet movements from game-provider operations. Money is always a decimal **string**
+    with exactly two places plus an ISO 4217 currency, e.g. `{"amount":"25.00","currency":"BRL"}`.
+
+    **Authentication**: OAuth 2.0 client credentials against Keycloak (realm `jungle`).
+    Tokens must carry `aud=jungle-api`. Providers (`provider-a`, `provider-b`) get
+    `wagering.write wagering.read` and a `provider_id` claim; the internal service
+    (`jungle-internal`) gets `wallets.write wallets.read wallets.reconcile wagering.read`.
+
+    **Errors** use `application/problem+json` with a stable `code`. Business rejections
+    are *not* errors: they are persisted outcomes returned with HTTP 422 and a `failureCode`.
+servers:
+  - url: /
+security:
+  - keycloak: []
+tags:
+  - name: wallets
+    description: Internal wallet operations (internal service only)
+  - name: wagering
+    description: Provider operations
+  - name: health
+paths:
+  /wallets:
+    post:
+      tags: [wallets]
+      summary: Open a wallet
+      description: |
+        A positive initial balance creates the internal `OPENING` (PROCESSED), its credit
+        ledger entry and the `WagerTransactionProcessed` + `WalletBalanceChanged` events in
+        the same commit. Version is 1. Zero creates none of them.
+      security: [{ keycloak: [wallets.write] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenWalletRequest' }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Wallet' } } } }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /wallets/{walletId}:
+    get:
+      tags: [wallets]
+      summary: Read a wallet
+      security: [{ keycloak: [wallets.read] }]
+      parameters: [{ $ref: '#/components/parameters/WalletId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Wallet' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /wallets/{walletId}/ledger:
+    get:
+      tags: [wallets]
+      summary: List ledger entries (stable order by wallet version, opaque cursor)
+      security: [{ keycloak: [wallets.read] }]
+      parameters:
+        - $ref: '#/components/parameters/WalletId'
+        - { name: cursor, in: query, schema: { type: string }, description: Opaque cursor from `nextCursor` }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/LedgerPage' } } } }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /wagering/transactions:
+    post:
+      tags: [wagering]
+      summary: Submit a provider operation (idempotent)
+      description: |
+        `Idempotency-Key` is mandatory and used exactly as sent. The idempotency hash is
+        SHA-256 over the JCS canonical JSON of the business fields (key and transport
+        metadata excluded), identical for HTTP and SQS.
+
+        * same key + same payload → stored result, `idempotentReplay: true`, original balance
+        * same key + different payload → 409 `IDEMPOTENCY_KEY_REUSED`
+        * same `(providerId, externalTransactionId)` with another key → 409 `DUPLICATE_EXTERNAL_TRANSACTION`
+      security: [{ keycloak: [wagering.write] }]
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:\-]{0,127}$' } }
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitRequest' }
+      responses:
+        '200': { description: PROCESSED, content: { application/json: { schema: { $ref: '#/components/schemas/SubmitResult' } } } }
+        '202':
+          description: PENDING_REFERENCE — waiting for the referenced transaction; follow `Location`
+          headers: { Location: { schema: { type: string } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/SubmitResult' } } }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { description: REJECTED — definitive business rejection (persisted), content: { application/json: { schema: { $ref: '#/components/schemas/SubmitResult' } } } }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /wagering/transactions/{transactionId}:
+    get:
+      tags: [wagering]
+      summary: Follow a transaction (providers see only their own; others are 404)
+      security: [{ keycloak: [wagering.read] }]
+      parameters: [{ name: transactionId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Transaction' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /providers/{providerId}/wagering/transactions/{externalTransactionId}:
+    get:
+      tags: [wagering]
+      summary: Find a transaction by provider id and external id
+      security: [{ keycloak: [wagering.read] }]
+      parameters:
+        - { name: providerId, in: path, required: true, schema: { type: string } }
+        - { name: externalTransactionId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Transaction' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /health/live:
+    get: { tags: [health], security: [], summary: Liveness, responses: { '200': { description: UP } } }
+  /health/ready:
+    get: { tags: [health], security: [], summary: Readiness (PostgreSQL and SQS), responses: { '200': { description: UP }, '503': { description: DOWN or draining } } }
+
+components:
+  securitySchemes:
+    keycloak:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: /auth/realms/jungle/protocol/openid-connect/token
+          scopes:
+            wagering.write: Submit operations (providers)
+            wagering.read: Read transactions
+            wallets.write: Open wallets (internal)
+            wallets.read: Read wallets and ledgers (internal)
+            wallets.reconcile: Reconcile wallets (internal)
+  parameters:
+    WalletId: { name: walletId, in: path, required: true, schema: { type: string, format: uuid } }
+    CorrelationId: { name: X-Correlation-Id, in: header, required: false, schema: { type: string, pattern: '^[A-Za-z0-9._:\-]{1,64}$' } }
+  schemas:
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { type: string, pattern: '^(0|[1-9][0-9]{0,16})\.[0-9]{2}$', examples: ['25.00'] }
+        currency: { type: string, enum: [BRL, USD, EUR] }
+    SignedMoney:
+      type: object
+      properties:
+        amount: { type: string, pattern: '^-?[0-9]+\.[0-9]{2}$' }
+        currency: { type: string }
+    OpenWalletRequest:
+      type: object
+      required: [playerId, initialBalance]
+      additionalProperties: false
+      properties:
+        playerId: { type: string, format: uuid }
+        initialBalance: { $ref: '#/components/schemas/Money' }
+    Wallet:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        playerId: { type: string, format: uuid }
+        balance: { $ref: '#/components/schemas/Money' }
+        version: { type: integer, minimum: 1 }
+    LedgerPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              transactionId: { type: string, format: uuid }
+              direction: { type: string, enum: [DEBIT, CREDIT] }
+              money: { $ref: '#/components/schemas/Money' }
+              balanceBefore: { $ref: '#/components/schemas/Money' }
+              balanceAfter: { $ref: '#/components/schemas/Money' }
+              walletVersion: { type: integer }
+              createdAt: { type: string, format: date-time }
+        nextCursor: { type: [string, 'null'] }
+    SubmitRequest:
+      type: object
+      additionalProperties: false
+      required: [providerId, externalTransactionId, playerId, walletId, roundId, gameId, kind, money]
+      properties:
+        providerId: { type: string, description: Must equal the provider_id claim of the token }
+        externalTransactionId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:\-]{0,127}$' }
+        playerId: { type: string, format: uuid }
+        walletId: { type: string, format: uuid }
+        roundId: { type: string }
+        gameId: { type: string }
+        kind: { type: string, enum: [BET, WIN, LOSS, REFUND, ROLLBACK], description: 'LOSS requires 0.00; others > 0.00; OPENING is rejected' }
+        money: { $ref: '#/components/schemas/Money' }
+        referenceExternalTransactionId: { type: string, description: 'Required for REFUND/ROLLBACK; optional for WIN (a BET of the same round); not allowed for BET/LOSS' }
+    FailureCode:
+      type: string
+      enum: [INSUFFICIENT_FUNDS, REVERSAL_INSUFFICIENT_FUNDS, CURRENCY_MISMATCH, WALLET_PLAYER_MISMATCH,
+             REFERENCE_NOT_FOUND, REFERENCE_NOT_PROCESSED, REFERENCE_MISMATCH, REFERENCE_KIND_NOT_REVERSIBLE,
+             REVERSAL_AMOUNT_MISMATCH, ALREADY_REVERSED, INFRASTRUCTURE_FAILURE]
+    SubmitResult:
+      type: object
+      properties:
+        transactionId: { type: string, format: uuid }
+        status: { type: string, enum: [PROCESSED, PENDING_REFERENCE, REJECTED, FAILED] }
+        balance: { $ref: '#/components/schemas/Money', description: Wallet balance observed when concluded (absent while pending) }
+        failureCode: { $ref: '#/components/schemas/FailureCode' }
+        idempotentReplay: { type: boolean }
+    Transaction:
+      type: object
+      properties:
+        transactionId: { type: string, format: uuid }
+        origin: { type: string, enum: [EXTERNAL, INTERNAL] }
+        kind: { type: string, enum: [OPENING, BET, WIN, LOSS, REFUND, ROLLBACK] }
+        status: { type: string, enum: [PENDING, PENDING_REFERENCE, PROCESSED, REJECTED, FAILED] }
+        providerId: { type: string }
+        externalTransactionId: { type: string }
+        walletId: { type: string, format: uuid }
+        playerId: { type: string, format: uuid }
+        roundId: { type: string }
+        gameId: { type: string }
+        money: { $ref: '#/components/schemas/Money' }
+        referenceExternalTransactionId: { type: string }
+        referenceTransactionId: { type: string, format: uuid }
+        failureCode: { $ref: '#/components/schemas/FailureCode' }
+        balance: { $ref: '#/components/schemas/Money' }
+        walletVersion: { type: integer }
+        attempts: { type: integer }
+        nextAttemptAt: { type: string, format: date-time }
+        referenceDeadline: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        processedAt: { type: string, format: date-time }
+    Problem:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code:
+          type: string
+          enum: [INVALID_REQUEST, RESERVED_KIND, PAYLOAD_TOO_LARGE, UNAUTHENTICATED, INSUFFICIENT_SCOPE, PROVIDER_MISMATCH,
+                 WALLET_NOT_FOUND, TRANSACTION_NOT_FOUND, NOT_FOUND, IDEMPOTENCY_KEY_REUSED, DUPLICATE_EXTERNAL_TRANSACTION,
+                 WALLET_ALREADY_EXISTS, TEMPORARILY_UNAVAILABLE, INTERNAL_ERROR]
+        detail: { type: string }
+        correlationId: { type: string }
+        errors:
+          type: array
+          items: { type: object, properties: { field: { type: string }, reason: { type: string } } }
+  responses:
+    InvalidRequest: { description: Correctable input error (nothing persisted), content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    Unauthenticated: { description: 'Missing, invalid or expired token', content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    Forbidden: { description: Missing scope or providerId differs from the token, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    NotFound: { description: Not found (or not visible to the caller), content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    Conflict: { description: Idempotency conflict or duplicate wallet, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    Unavailable:
+      description: Transient failure, nothing committed — retry with the same Idempotency-Key
+      headers: { Retry-After: { schema: { type: integer } } }
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }

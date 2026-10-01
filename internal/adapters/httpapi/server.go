@@ -16,14 +16,6 @@ import (
 	"github.com/fredzolio/backend-go-jungle/internal/platform/health"
 )
 
-// NewMux registers every route of the public API.
-func NewMux(h *health.Registry) *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health/live", h.Live)
-	mux.HandleFunc("GET /health/ready", h.Ready)
-	return mux
-}
-
 // ServerParams groups the dependencies of the HTTP server.
 type ServerParams struct {
 	fx.In
@@ -32,7 +24,7 @@ type ServerParams struct {
 	Shutdowner fx.Shutdowner
 	Log        *slog.Logger
 	Health     *health.Registry
-	Mux        *http.ServeMux
+	Handler    http.Handler
 	Config     config.Config
 }
 
@@ -42,7 +34,7 @@ func RegisterServer(p ServerParams) {
 	cfg := p.Config.HTTP
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           p.Mux,
+		Handler:           p.Handler,
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,

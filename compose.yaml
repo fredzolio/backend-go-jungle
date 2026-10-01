@@ -39,6 +39,9 @@ x-api-env: &api-env
   AWS_REGION: us-east-1
   AWS_CONSUMER_ACCESS_KEY_ID_FILE: /provisioned/aws/consumer/access_key_id
   AWS_CONSUMER_SECRET_ACCESS_KEY_FILE: /provisioned/aws/consumer/secret_access_key
+  OIDC_ISSUER: ${PUBLIC_BASE_URL:-http://localhost:18080}/auth/realms/jungle
+  OIDC_JWKS_URL: http://keycloak:8080/auth/realms/jungle/protocol/openid-connect/certs
+  OIDC_AUDIENCE: jungle-api
 
 services:
   postgres:

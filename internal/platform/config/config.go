@@ -26,6 +26,15 @@ type Config struct {
 	Reference Reference `envPrefix:"REFERENCE_"`
 	Postgres  Postgres  `envPrefix:"DB_"`
 	AWS       AWS       `envPrefix:"AWS_"`
+	OIDC      OIDC      `envPrefix:"OIDC_"`
+}
+
+// OIDC configures access-token validation. Issuer is the public `iss` value;
+// JWKSURL the in-network keys endpoint.
+type OIDC struct {
+	Issuer   string `env:"ISSUER,required"`
+	JWKSURL  string `env:"JWKS_URL,required"`
+	Audience string `env:"AUDIENCE" envDefault:"jungle-api"`
 }
 
 // HTTP configures the public API listener.

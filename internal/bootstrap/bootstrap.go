@@ -4,6 +4,7 @@ package bootstrap
 
 import (
 	"log/slog"
+	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/fx"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/awsx"
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/httpapi"
+	"github.com/fredzolio/backend-go-jungle/internal/adapters/oidc"
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/postgres"
 	"github.com/fredzolio/backend-go-jungle/internal/app"
 	"github.com/fredzolio/backend-go-jungle/internal/platform/config"
@@ -52,6 +54,7 @@ var appModule = fx.Module("app",
 			return app.Deps{UoW: uow, Clock: app.SystemClock{}, IDs: app.UUIDv7{}}
 		},
 		app.NewWallets,
+		app.NewQueries,
 		func(d app.Deps, cfg config.Config) *app.Wagering {
 			r := cfg.Reference
 			return app.NewWagering(d, app.ReferencePolicy{InitialBackoff: r.InitialBackoff, MaxBackoff: r.MaxBackoff, TTL: r.TTL})
@@ -87,6 +90,14 @@ var messagingModule = fx.Module("messaging",
 )
 
 var httpModule = fx.Module("http",
-	fx.Provide(httpapi.NewMux),
+	fx.Provide(
+		func(cfg config.Config) (httpapi.TokenVerifier, error) {
+			return oidc.NewVerifier(oidc.Config{Issuer: cfg.OIDC.Issuer, JWKSURL: cfg.OIDC.JWKSURL, Audience: cfg.OIDC.Audience})
+		},
+		func(h *health.Registry, v httpapi.TokenVerifier, log *slog.Logger, w *app.Wallets, wg *app.Wagering, q *app.Queries) http.Handler {
+			return httpapi.NewHandler(httpapi.Routes{Health: h, Verifier: v, Log: log,
+				Handlers: httpapi.Handlers{Wallets: w, Wagering: wg, Queries: q, Log: log}})
+		},
+	),
 	fx.Invoke(httpapi.RegisterServer),
 )

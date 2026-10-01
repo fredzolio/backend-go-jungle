@@ -15,7 +15,7 @@
 1. Ler este arquivo inteiro (principalmente §4 Fases e §7 Log).
 2. `git log --oneline -15` para ver onde parou.
 3. `make up` sobe o ambiente; `make ps` confere saúde; `make down` desliga.
-   Testes: `make test-race` (unitários) e `make test-integration` (Docker; containers efêmeros via testcontainers).
+   Testes: `make test-race` (unitários), `make test-integration` (Docker; containers efêmeros via testcontainers) e `make test-e2e` (stack no ar; tokens reais do Keycloak).
    Verificação estática: `GOTOOLCHAIN=go1.27.1 gopls check $(find cmd internal migrations -name '*.go')`.
 4. Continuar a primeira caixa `[ ]` da fase marcada como **EM ANDAMENTO**.
 5. Ao terminar um bloco: marcar caixas, registrar no §7 e commitar.
@@ -130,12 +130,16 @@ Notas da F2:
 - [x] Testes de integração com relógio controlável: REFUND antes da BET resolvido por outra instância; expiração com reagendamento (tentativas, sem evento duplicado); regras de reversão (dupla, ROLLBACK de ROLLBACK, parcial, outra rodada, ROLLBACK de REFUND); ROLLBACK de WIN sem saldo; **REFUND × ROLLBACK concorrentes → dinheiro devolvido uma vez**; **3 resolvers concorrentes → cada pendência concluída exatamente uma vez**. Estável com `-count=4`
 - [x] Ambiente real: resolver ativo nas 3 instâncias; SIGTERM encerra worker → HTTP → pool
 
-### F5 — HTTP + AuthN/Z — **PRÓXIMA**
-- [ ] Rotas do contrato, problem+json, códigos documentados
-- [ ] OIDC (issuer público × JWKS interno, aud, scopes, provider_id) + isolamento (404)
-- [ ] OpenAPI + docs em `/docs`
+### F5 — HTTP + AuthN/Z — **CONCLUÍDA** (2026-10-01)
+- [x] Rotas do contrato (`net/http` ServeMux): `POST /wallets`, `GET /wallets/{id}`, `GET /wallets/{id}/ledger` (cursor opaco ligado à carteira, `limit` 1–200), `POST /wagering/transactions`, `GET /wagering/transactions/{id}`, `GET /providers/{p}/wagering/transactions/{ext}`, health, `/openapi.yaml`, `/docs` (Scalar)
+- [x] Contrato de respostas: 200 PROCESSED (inclusive replays) · 202 PENDING_REFERENCE + `Location` · 422 REJECTED + `failureCode` · 400 `INVALID_REQUEST`/`RESERVED_KIND` (lista de campos) · 401 `UNAUTHENTICATED` (+`WWW-Authenticate`) · 403 `INSUFFICIENT_SCOPE`/`PROVIDER_MISMATCH` · 404 `WALLET_NOT_FOUND`/`TRANSACTION_NOT_FOUND` · 409 `IDEMPOTENCY_KEY_REUSED`/`DUPLICATE_EXTERNAL_TRANSACTION`/`WALLET_ALREADY_EXISTS` · 503 `TEMPORARILY_UNAVAILABLE` + `Retry-After` · erros em `application/problem+json`
+- [x] OIDC (`go-oidc`): issuer público × JWKS interno, `aud=jungle-api`, RS256, `typ=Bearer`, scopes, claim `provider_id`; operações de carteira só com scopes internos; provider só vê o que é dele (404, sem revelar existência); `providerId` do corpo tem que bater com o token
+- [x] Middleware: correlation id (aceita `X-Correlation-Id` válido ou gera UUIDv7, ecoa no header), log JSON por request (sem corpo nem credenciais; com `clientId`/`providerId`), recover de panic; corpo JSON estrito (campos desconhecidos, dados extras, 64 KB, número no lugar de string → 400)
+- [x] OpenAPI 3.1 (`api/openapi.yaml`, válido no Redocly) embutido no binário
+- [x] Testes de integração do contrato (Postgres real + verificação JWT real com JWKS local): 7 casos de token inválido, autorização interna × provider, abertura/conflito, todos os status do submit, isolamento entre providers em leituras e replays, paginação por cursor
+- [x] **E2E com o Keycloak real** pelo edge (`make up && make test-e2e`): token ausente/adulterado/expirado (client de 5 s) → 401; fluxo completo com isolamento, replay e 80+80
 
-### F6 — Consumer SQS + inbox — pendente
+### F6 — Consumer SQS + inbox — **PRÓXIMA**
 - [ ] Inbox na mesma transação; delete pós-commit; DLQ explícita p/ veneno; backoff por visibility
 - [ ] Bloqueio de grupo FIFO no batch; shutdown seguro
 - [ ] Cenários cruzados HTTP×SQS
@@ -171,7 +175,7 @@ Notas da F2:
 - [ ] Nunca I/O de rede com transação SQL aberta
 - [ ] `MessageGroupId = walletId`; claim da outbox por cabeça de partição; batch FIFO bloqueia grupo após falha
 - [x] Replay devolve saldo observado; mesmo externalId com chave nova → `ErrDuplicateExternalTransaction` (409 na F5)
-- [ ] Validar assinatura, `iss`, `aud`; 404 para transação de outro provider
+- [x] Validar assinatura, `iss`, `aud`; 404 para transação de outro provider
 - [ ] Testes sem mocks de PG/SQS/IdP; processos reais
 
 ## 6. Spikes — resultados
@@ -195,6 +199,7 @@ Observação: o Keycloak responde 503 (bootstrap) por alguns segundos depois do 
 | 2026-10-01 | — | Pesquisa, arquitetura e estudo de 12 forks concluídos | Iniciar F0 |
 | 2026-10-01 | F0 | Fundação completa: compose isolado, Terraform provisionando Keycloak/MiniStack/Postgres, esqueleto Fx com health, edge Traefik, spikes executados | F1: domínio puro (Money primeiro) |
 | 2026-10-01 | F1 | Domínio puro completo (money, wallet, wagering, events) com testes unitários, fuzz, vetores golden e guardas arquiteturais; `go test -race` verde | F2: migrations goose + constraints/triggers + repositórios pgx |
+| 2026-10-01 | F5 | API HTTP + OIDC + OpenAPI; testes de contrato e e2e com Keycloak real verdes | F6: consumer SQS + inbox + DLQ |
 | 2026-10-01 | F4 | Reversões e worker de PENDING_REFERENCE (multi-instância, TTL, backoff, wake-up); cenário obrigatório 7 verde | F5: HTTP + OIDC + OpenAPI |
 | 2026-10-01 | F3 | Casos de uso OpenWallet/Submit com idempotência persistente e liquidação compartilhada; cenários de concorrência obrigatórios (1, 2, 3) verdes contra Postgres real | F4: reversões + worker de PENDING_REFERENCE |
 | 2026-10-01 | F2 | Persistência completa: 5 migrations reversíveis, invariantes no banco, privilégios mínimos, stores pgx, harness testcontainers + 14 testes de integração; gopls v0.23.0 instalado (`~/go/bin`, symlink em `~/.cargo/bin`) | F3: OpenWallet + Submit (BET/WIN/LOSS) + concorrência |
