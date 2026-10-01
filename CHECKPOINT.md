@@ -122,11 +122,15 @@ Notas da F2:
 - [x] Concorrência (in-process, DB real): **50× mesma aposta → 1 débito**; **80+80 sobre 100 → 1 processada, 1 `INSUFFICIENT_FUNDS`, saldo 20, 1 débito** (10 rodadas + reenvios); **carteira B processa enquanto A está travada**; 8 carteiras × 10 apostas simultâneas consistentes. Estável com `-count=4`
 - [x] Mutação de controle: sem `FOR NO KEY UPDATE`, a guarda de versão bloqueia o lost update e o teste 80+80 falha (defesa em profundidade comprovada)
 
-### F4 — Reversões e referências pendentes — **PRÓXIMA**
-- [ ] REFUND/ROLLBACK com validação de referência e reversão única
-- [ ] PENDING_REFERENCE + worker (SKIP LOCKED, backoff, TTL, wake-up de dependentes)
+### F4 — Reversões e referências pendentes — **CONCLUÍDA** (2026-10-01)
+- [x] REFUND/ROLLBACK no `Submit`: referência resolvida e travada (`FOR UPDATE`) depois da carteira; `ALREADY_REVERSED` (domínio + índice único); `REVERSAL_INSUFFICIENT_FUNDS`; `REFERENCE_NOT_PROCESSED` imediato para referência rejeitada
+- [x] `Wagering.ResolveDue`: candidatas listadas sem lock; cada uma em transação própria com carteira `SKIP LOCKED` → transação `FOR UPDATE` → recheca status/agenda (mesma ordem do Submit: sem deadlock, sem lease para vazar)
+- [x] Expiração: referência ausente → `REFERENCE_NOT_FOUND`; presente mas não concluída → `REFERENCE_NOT_PROCESSED`; próxima tentativa nunca passa do prazo; evento `PendingReference` só na primeira vez
+- [x] Worker genérico `workers.Poller` no ciclo de vida do Fx (contexto próprio, cancelamento faz rollback, término observável); role `resolver` via `ROLES`; configurável (`REFERENCE_TTL`, backoffs, intervalo, lote)
+- [x] Testes de integração com relógio controlável: REFUND antes da BET resolvido por outra instância; expiração com reagendamento (tentativas, sem evento duplicado); regras de reversão (dupla, ROLLBACK de ROLLBACK, parcial, outra rodada, ROLLBACK de REFUND); ROLLBACK de WIN sem saldo; **REFUND × ROLLBACK concorrentes → dinheiro devolvido uma vez**; **3 resolvers concorrentes → cada pendência concluída exatamente uma vez**. Estável com `-count=4`
+- [x] Ambiente real: resolver ativo nas 3 instâncias; SIGTERM encerra worker → HTTP → pool
 
-### F5 — HTTP + AuthN/Z — pendente
+### F5 — HTTP + AuthN/Z — **PRÓXIMA**
 - [ ] Rotas do contrato, problem+json, códigos documentados
 - [ ] OIDC (issuer público × JWKS interno, aud, scopes, provider_id) + isolamento (404)
 - [ ] OpenAPI + docs em `/docs`
@@ -163,7 +167,7 @@ Notas da F2:
 ## 5. Lições dos forks (checklist de regressão)
 
 - [x] Índice de reversão **sem** `kind` (domínio na F1, índice no banco na F2, com teste e mutação de controle)
-- [ ] Todo `SKIP LOCKED` dentro de transação com UPDATE de claim
+- [x] Todo `SKIP LOCKED` dentro de transação (resolver: carteira `SKIP LOCKED` + transação travada na mesma transação SQL)
 - [ ] Nunca I/O de rede com transação SQL aberta
 - [ ] `MessageGroupId = walletId`; claim da outbox por cabeça de partição; batch FIFO bloqueia grupo após falha
 - [x] Replay devolve saldo observado; mesmo externalId com chave nova → `ErrDuplicateExternalTransaction` (409 na F5)
@@ -191,5 +195,6 @@ Observação: o Keycloak responde 503 (bootstrap) por alguns segundos depois do 
 | 2026-10-01 | — | Pesquisa, arquitetura e estudo de 12 forks concluídos | Iniciar F0 |
 | 2026-10-01 | F0 | Fundação completa: compose isolado, Terraform provisionando Keycloak/MiniStack/Postgres, esqueleto Fx com health, edge Traefik, spikes executados | F1: domínio puro (Money primeiro) |
 | 2026-10-01 | F1 | Domínio puro completo (money, wallet, wagering, events) com testes unitários, fuzz, vetores golden e guardas arquiteturais; `go test -race` verde | F2: migrations goose + constraints/triggers + repositórios pgx |
+| 2026-10-01 | F4 | Reversões e worker de PENDING_REFERENCE (multi-instância, TTL, backoff, wake-up); cenário obrigatório 7 verde | F5: HTTP + OIDC + OpenAPI |
 | 2026-10-01 | F3 | Casos de uso OpenWallet/Submit com idempotência persistente e liquidação compartilhada; cenários de concorrência obrigatórios (1, 2, 3) verdes contra Postgres real | F4: reversões + worker de PENDING_REFERENCE |
 | 2026-10-01 | F2 | Persistência completa: 5 migrations reversíveis, invariantes no banco, privilégios mínimos, stores pgx, harness testcontainers + 14 testes de integração; gopls v0.23.0 instalado (`~/go/bin`, symlink em `~/.cargo/bin`) | F3: OpenWallet + Submit (BET/WIN/LOSS) + concorrência |

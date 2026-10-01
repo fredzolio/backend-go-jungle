@@ -53,8 +53,17 @@ type WalletStore interface {
 	// GetForUpdate locks the wallet row until the transaction ends (per-wallet
 	// serialization point; wallets never wait on each other).
 	GetForUpdate(ctx context.Context, id uuid.UUID) (*wallet.Wallet, error)
+	// TryGetForUpdate locks the wallet unless another transaction holds it
+	// (SKIP LOCKED); ok=false means "busy, try later". Used by background workers.
+	TryGetForUpdate(ctx context.Context, id uuid.UUID) (w *wallet.Wallet, ok bool, err error)
 	// Update writes balance/version guarded by expectedVersion.
 	Update(ctx context.Context, w *wallet.Wallet, expectedVersion int64) error
+}
+
+// DueTransaction identifies a PENDING_REFERENCE transaction ready for a retry.
+type DueTransaction struct {
+	ID       uuid.UUID
+	WalletID uuid.UUID
 }
 
 // TransactionStore persists wager transactions.
@@ -75,6 +84,11 @@ type TransactionStore interface {
 	Update(ctx context.Context, t *wagering.Transaction) error
 	// WakeDependents makes transactions waiting on (provider, externalId) due now.
 	WakeDependents(ctx context.Context, providerID, externalID string, at time.Time) error
+	// GetForUpdate locks a transaction by id.
+	GetForUpdate(ctx context.Context, id uuid.UUID) (*wagering.Transaction, error)
+	// DuePendingReferences lists PENDING_REFERENCE transactions due at now, oldest
+	// first, without locking (the caller locks wallet then transaction).
+	DuePendingReferences(ctx context.Context, now time.Time, limit int) ([]DueTransaction, error)
 }
 
 // LedgerStore appends and reads ledger entries.

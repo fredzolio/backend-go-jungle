@@ -41,6 +41,15 @@ func (uc *Wagering) settle(ctx context.Context, s settlement) error {
 	case wagering.Reject:
 		return uc.conclude(ctx, s, func() error { return s.t.Reject(d.Code, ptr(uc.observed(s.w)), now) }, nil)
 	case wagering.AwaitReference:
+		if s.t.ReferenceExpired(now) {
+			// Waiting window over: absent reference => REFERENCE_NOT_FOUND; present
+			// but never concluded => REFERENCE_NOT_PROCESSED.
+			code := wagering.FailureReferenceNotFound
+			if ref.Tx != nil {
+				code = wagering.FailureReferenceNotProcessed
+			}
+			return uc.conclude(ctx, s, func() error { return s.t.Reject(code, ptr(uc.observed(s.w)), now) }, nil)
+		}
 		return uc.park(ctx, s)
 	default:
 		return fmt.Errorf("%w: unknown decision %T", ErrIntegrity, decision)
@@ -126,8 +135,16 @@ func (uc *Wagering) rejectedEvent(s settlement) ([]OutboxRecord, error) {
 func (uc *Wagering) park(ctx context.Context, s settlement) error {
 	now := uc.d.Clock.Now()
 	first := s.t.Status() == wagering.StatusPending
+	deadline := now.Add(uc.policy.TTL)
+	if !first {
+		deadline = s.t.Snapshot().ReferenceDeadline
+	}
+	// Never sleep past the deadline: the attempt at the deadline concludes it.
 	next := uc.policy.NextAttempt(now, s.t.Snapshot().Attempts)
-	if err := s.t.AwaitReference(next, now.Add(uc.policy.TTL), now); err != nil {
+	if next.After(deadline) {
+		next = deadline
+	}
+	if err := s.t.AwaitReference(next, deadline, now); err != nil {
 		return err
 	}
 	if err := s.tx.Transactions().Update(ctx, s.t); err != nil {

@@ -5,14 +5,17 @@ package bootstrap
 import (
 	"log/slog"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/awsx"
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/httpapi"
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/postgres"
+	"github.com/fredzolio/backend-go-jungle/internal/app"
 	"github.com/fredzolio/backend-go-jungle/internal/platform/config"
 	"github.com/fredzolio/backend-go-jungle/internal/platform/health"
+	"github.com/fredzolio/backend-go-jungle/internal/workers"
 )
 
 const healthGroup = `group:"health_checks"`
@@ -27,9 +30,43 @@ func New(cfg config.Config, log *slog.Logger) *fx.App {
 		platformModule,
 		postgresModule,
 		messagingModule,
+		appModule,
 		httpModule,
+		fx.Options(roleModules(cfg)...),
 	)
 }
+
+// roleModules enables the background roles configured for this process.
+func roleModules(cfg config.Config) []fx.Option {
+	var opts []fx.Option
+	if cfg.HasRole("resolver") {
+		opts = append(opts, resolverModule)
+	}
+	return opts
+}
+
+var appModule = fx.Module("app",
+	fx.Provide(
+		func(pool *pgxpool.Pool) app.UnitOfWork { return postgres.NewUnitOfWork(pool) },
+		func(uow app.UnitOfWork) app.Deps {
+			return app.Deps{UoW: uow, Clock: app.SystemClock{}, IDs: app.UUIDv7{}}
+		},
+		app.NewWallets,
+		func(d app.Deps, cfg config.Config) *app.Wagering {
+			r := cfg.Reference
+			return app.NewWagering(d, app.ReferencePolicy{InitialBackoff: r.InitialBackoff, MaxBackoff: r.MaxBackoff, TTL: r.TTL})
+		},
+	),
+)
+
+var resolverModule = fx.Module("resolver",
+	fx.Invoke(func(lc fx.Lifecycle, uc *app.Wagering, cfg config.Config, log *slog.Logger) {
+		workers.Poller{
+			Name: "reference-resolver", Run: uc.ResolveDue, Log: log,
+			Interval: cfg.Reference.PollInterval, Batch: cfg.Reference.Batch,
+		}.Register(lc)
+	}),
+)
 
 var platformModule = fx.Module("platform",
 	fx.Provide(fx.Annotate(health.NewRegistry, fx.ParamTags(``, healthGroup))),

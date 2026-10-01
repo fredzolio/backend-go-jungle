@@ -80,6 +80,29 @@ func (s transactionStore) FindForUpdate(ctx context.Context, providerID, externa
 		WHERE origin = 'EXTERNAL' AND provider_id = $1 AND external_transaction_id = $2 FOR UPDATE`, providerID, externalID)
 }
 
+func (s transactionStore) GetForUpdate(ctx context.Context, id uuid.UUID) (*wagering.Transaction, error) {
+	return s.one(ctx, `SELECT `+transactionColumns+` FROM wager_transactions WHERE id = $1 FOR UPDATE`, id)
+}
+
+func (s transactionStore) DuePendingReferences(ctx context.Context, now time.Time, limit int) ([]app.DueTransaction, error) {
+	rows, err := s.q.Query(ctx, `SELECT id, wallet_id FROM wager_transactions
+		WHERE status = 'PENDING_REFERENCE' AND next_attempt_at <= $1
+		ORDER BY next_attempt_at LIMIT $2`, now.UTC(), limit)
+	if err != nil {
+		return nil, classify("due pending references", err)
+	}
+	defer rows.Close()
+	var out []app.DueTransaction
+	for rows.Next() {
+		var d app.DueTransaction
+		if err := rows.Scan(&d.ID, &d.WalletID); err != nil {
+			return nil, classify("scan due", err)
+		}
+		out = append(out, d)
+	}
+	return out, classify("due pending references", rows.Err())
+}
+
 func (s transactionStore) one(ctx context.Context, query string, args ...any) (*wagering.Transaction, error) {
 	t, err := scanTransaction(s.q.QueryRow(ctx, query, args...))
 	if errors.Is(err, pgx.ErrNoRows) {
