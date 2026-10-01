@@ -109,9 +109,11 @@ locals {
           Resource = [aws_sqs_queue.ingress_dlq.arn]
         },
       ]
+      # AWS authorizes PublishBatch through sns:Publish; MiniStack (AUTH=true) checks
+      # sns:PublishBatch explicitly, so both are listed.
       "jungle-outbox-publisher" = [{
         Effect   = "Allow"
-        Action   = ["sns:Publish", "sns:GetTopicAttributes"]
+        Action   = ["sns:Publish", "sns:PublishBatch", "sns:GetTopicAttributes"]
         Resource = [aws_sns_topic.events.arn]
       }]
       "jungle-events-reader" = [{

@@ -20,7 +20,7 @@ type Config struct {
 	InstanceID string     `env:"INSTANCE_ID" envDefault:"local"`
 	LogLevel   slog.Level `env:"LOG_LEVEL"   envDefault:"info"`
 	// Roles enabled in this process (same binary everywhere): resolver, ...
-	Roles     []string  `env:"ROLES" envDefault:"resolver,consumer" envSeparator:","`
+	Roles     []string  `env:"ROLES" envDefault:"resolver,consumer,outbox" envSeparator:","`
 	HTTP      HTTP      `envPrefix:"HTTP_"`
 	Lifecycle Lifecycle `envPrefix:"LIFECYCLE_"`
 	Reference Reference `envPrefix:"REFERENCE_"`
@@ -28,6 +28,7 @@ type Config struct {
 	AWS       AWS       `envPrefix:"AWS_"`
 	OIDC      OIDC      `envPrefix:"OIDC_"`
 	Consumer  Consumer  `envPrefix:"CONSUMER_"`
+	Outbox    Outbox    `envPrefix:"OUTBOX_"`
 }
 
 // OIDC configures access-token validation. Issuer is the public `iss` value;
@@ -115,7 +116,19 @@ type AWS struct {
 	Region       string      `env:"REGION"            envDefault:"us-east-1"`
 	IngressQueue string      `env:"SQS_INGRESS_QUEUE" envDefault:"wager-transactions.fifo"`
 	IngressDLQ   string      `env:"SQS_INGRESS_DLQ"   envDefault:"wager-transactions-dlq.fifo"`
+	EventsTopic  string      `env:"EVENTS_TOPIC_ARN_FILE,file,required"`
 	Consumer     Credentials `envPrefix:"CONSUMER_"`
+	Publisher    Credentials `envPrefix:"PUBLISHER_"`
+}
+
+// Outbox tunes the outbox relay (role "outbox").
+type Outbox struct {
+	Lease          time.Duration `env:"LEASE"           envDefault:"30s"`
+	InitialBackoff time.Duration `env:"INITIAL_BACKOFF" envDefault:"1s"`
+	MaxBackoff     time.Duration `env:"MAX_BACKOFF"     envDefault:"5m"`
+	PollInterval   time.Duration `env:"POLL_INTERVAL"   envDefault:"200ms"`
+	MaxAttempts    int           `env:"MAX_ATTEMPTS"    envDefault:"20"`
+	Batch          int           `env:"BATCH"           envDefault:"50"`
 }
 
 // Consumer tunes the SQS ingress consumer (role "consumer").
@@ -147,6 +160,9 @@ func Load() (Config, error) {
 	cfg.Postgres.Password = strings.TrimSpace(cfg.Postgres.Password)
 	cfg.AWS.Consumer.AccessKeyID = strings.TrimSpace(cfg.AWS.Consumer.AccessKeyID)
 	cfg.AWS.Consumer.SecretAccessKey = strings.TrimSpace(cfg.AWS.Consumer.SecretAccessKey)
+	cfg.AWS.Publisher.AccessKeyID = strings.TrimSpace(cfg.AWS.Publisher.AccessKeyID)
+	cfg.AWS.Publisher.SecretAccessKey = strings.TrimSpace(cfg.AWS.Publisher.SecretAccessKey)
+	cfg.AWS.EventsTopic = strings.TrimSpace(cfg.AWS.EventsTopic)
 	return cfg, nil
 }
 
