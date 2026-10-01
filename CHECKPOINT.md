@@ -113,12 +113,16 @@ Notas da F2:
 - Bug real encontrado pelos testes de integração e corrigido: `CASE` com `NEW.wallet_id` no trigger diferido falhava em linhas de `wallets` (PL/pgSQL) → `IF/ELSE`. A migration 00003 foi editada antes da entrega; o banco local foi resetado com `migrate reset` + `up` (demonstra a reversão).
 - Mutação de controle: com `kind` no índice de reversão, o teste de reversão única falha (como esperado).
 
-### F3 — Casos de uso núcleo — **PRÓXIMA**
-- [ ] OpenWallet (OPENING + ledger + outbox no mesmo commit; saldo 0 sem OPENING)
-- [ ] Submit BET/WIN/LOSS síncrono com idempotência (`ON CONFLICT DO NOTHING`)
-- [ ] Concorrência: 50× mesma aposta; 80+80 sobre 100; carteiras paralelas
+### F3 — Casos de uso núcleo — **CONCLUÍDA** (2026-10-01)
+- [x] `Wallets.Open`: carteira + OPENING `PROCESSED` + lançamento + `WagerTransactionProcessed` + `WalletBalanceChanged` no mesmo commit (versão 1); saldo 0 sem OPENING/ledger/eventos; duplicata → `ErrWalletExists`
+- [x] `Wagering.Submit` síncrono (um commit, nenhum `PENDING` intermediário): `INSERT … ON CONFLICT DO NOTHING` → replay (mesma chave+hash) / `ErrIdempotencyConflict` (mesma chave, hash diferente) / `ErrDuplicateExternalTransaction` (mesmo externalId com outra chave); lock da carteira; `Evaluate`; ledger + saldo + status + outbox; `WakeDependents`
+- [x] Liquidação (`settle`) compartilhada para o worker de referências (F4): Move / NoMove / Reject (persistido com saldo observado) / AwaitReference (`PENDING_REFERENCE` + evento só na primeira vez; backoff exponencial com jitter inteiro)
+- [x] Gancho `Within` no Submit para o consumer SQS registrar a inbox no mesmo commit (F6)
+- [x] Testes de integração: abertura com/sem saldo e duplicada, BET/WIN/LOSS (LOSS sem ledger e sem mudar versão), replay devolve saldo original, conflitos, rejeições auditáveis (`INSUFFICIENT_FUNDS`, `CURRENCY_MISMATCH`, `WALLET_PLAYER_MISMATCH`), carteira inexistente e provider divergente sem persistir nada
+- [x] Concorrência (in-process, DB real): **50× mesma aposta → 1 débito**; **80+80 sobre 100 → 1 processada, 1 `INSUFFICIENT_FUNDS`, saldo 20, 1 débito** (10 rodadas + reenvios); **carteira B processa enquanto A está travada**; 8 carteiras × 10 apostas simultâneas consistentes. Estável com `-count=4`
+- [x] Mutação de controle: sem `FOR NO KEY UPDATE`, a guarda de versão bloqueia o lost update e o teste 80+80 falha (defesa em profundidade comprovada)
 
-### F4 — Reversões e referências pendentes — pendente
+### F4 — Reversões e referências pendentes — **PRÓXIMA**
 - [ ] REFUND/ROLLBACK com validação de referência e reversão única
 - [ ] PENDING_REFERENCE + worker (SKIP LOCKED, backoff, TTL, wake-up de dependentes)
 
@@ -162,7 +166,7 @@ Notas da F2:
 - [ ] Todo `SKIP LOCKED` dentro de transação com UPDATE de claim
 - [ ] Nunca I/O de rede com transação SQL aberta
 - [ ] `MessageGroupId = walletId`; claim da outbox por cabeça de partição; batch FIFO bloqueia grupo após falha
-- [ ] Replay devolve saldo observado; mesmo externalId com chave nova → 409
+- [x] Replay devolve saldo observado; mesmo externalId com chave nova → `ErrDuplicateExternalTransaction` (409 na F5)
 - [ ] Validar assinatura, `iss`, `aud`; 404 para transação de outro provider
 - [ ] Testes sem mocks de PG/SQS/IdP; processos reais
 
@@ -187,4 +191,5 @@ Observação: o Keycloak responde 503 (bootstrap) por alguns segundos depois do 
 | 2026-10-01 | — | Pesquisa, arquitetura e estudo de 12 forks concluídos | Iniciar F0 |
 | 2026-10-01 | F0 | Fundação completa: compose isolado, Terraform provisionando Keycloak/MiniStack/Postgres, esqueleto Fx com health, edge Traefik, spikes executados | F1: domínio puro (Money primeiro) |
 | 2026-10-01 | F1 | Domínio puro completo (money, wallet, wagering, events) com testes unitários, fuzz, vetores golden e guardas arquiteturais; `go test -race` verde | F2: migrations goose + constraints/triggers + repositórios pgx |
+| 2026-10-01 | F3 | Casos de uso OpenWallet/Submit com idempotência persistente e liquidação compartilhada; cenários de concorrência obrigatórios (1, 2, 3) verdes contra Postgres real | F4: reversões + worker de PENDING_REFERENCE |
 | 2026-10-01 | F2 | Persistência completa: 5 migrations reversíveis, invariantes no banco, privilégios mínimos, stores pgx, harness testcontainers + 14 testes de integração; gopls v0.23.0 instalado (`~/go/bin`, symlink em `~/.cargo/bin`) | F3: OpenWallet + Submit (BET/WIN/LOSS) + concorrência |
