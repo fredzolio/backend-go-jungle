@@ -69,6 +69,7 @@ func (p ReferencePolicy) NextAttempt(now time.Time, attempt int) time.Time {
 type Meta struct {
 	CorrelationID string // HTTP X-Correlation-Id or SQS messageId
 	CausationID   string // optional: what directly caused this processing
+	Channel       string // http | sqs | resolver (metrics)
 }
 
 // outboxRecord snapshots an event envelope for the outbox. Every event of a wallet

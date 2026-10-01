@@ -86,3 +86,20 @@ func (s walletStore) Update(ctx context.Context, w *wallet.Wallet, expectedVersi
 	}
 	return nil
 }
+
+func (s walletStore) IDsAfter(ctx context.Context, after uuid.UUID, limit int) ([]uuid.UUID, error) {
+	rows, err := s.q.Query(ctx, `SELECT id FROM wallets WHERE id > $1 ORDER BY id LIMIT $2`, after, limit)
+	if err != nil {
+		return nil, classify("list wallet ids", err)
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, classify("scan wallet id", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, classify("list wallet ids", rows.Err())
+}

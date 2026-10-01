@@ -170,3 +170,20 @@ func TestLedger_pages_with_opaque_cursor(t *testing.T) {
 		t.Fatalf("cursor of another wallet: %d", r.status)
 	}
 }
+
+func TestReconciliation_endpoint_reports_and_is_internal_only(t *testing.T) {
+	a := newAPI(t)
+	w := a.openWallet(t, player, "1000.00")
+	tok := idp.provider(t, "provider-a")
+	a.call(t, "POST", "/wagering/transactions", tok, bet(w, "provider-a", "transaction-123", "BET", "25.00", ""), "Idempotency-Key", "k-rec")
+	path := "/wallets/" + w["id"].(string) + "/reconciliation"
+	if r := a.call(t, "POST", path, tok, nil); r.status != http.StatusForbidden {
+		t.Fatalf("provider reconciling: %d", r.status)
+	}
+	r := a.call(t, "POST", path, idp.internal(t), nil)
+	money := func(k string) string { return r.body[k].(map[string]any)["amount"].(string) }
+	if r.status != http.StatusOK || r.body["consistent"] != true || r.body["checkedEntries"] != float64(2) ||
+		money("storedBalance") != "975.00" || money("calculatedBalance") != "975.00" || money("difference") != "0.00" {
+		t.Fatalf("reconciliation = %d %v", r.status, r.body)
+	}
+}

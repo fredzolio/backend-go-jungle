@@ -87,7 +87,7 @@ func (r rig) start(t *testing.T, api sqsconsumer.API) (stop func()) {
 	if api == nil {
 		api = r.client
 	}
-	c := sqsconsumer.New(api, r.wagering, r.senders, silent, sqsconsumer.Config{
+	c := sqsconsumer.New(sqsconsumer.Deps{API: api, Ingest: r.wagering, Senders: r.senders, Log: silent, Observer: nopObserver{}}, sqsconsumer.Config{
 		QueueURL: r.queues.URL, DLQURL: r.queues.DLQURL, ConsumerName: "wager-ingress",
 		ProcessTimeout: 10 * time.Second, MaxBackoff: 2 * time.Second, MaxMessages: 10, WaitSeconds: 1,
 	})
@@ -204,6 +204,10 @@ func (r rig) dlqCodes(t *testing.T) []string {
 	}
 	return codes
 }
+
+type nopObserver struct{}
+
+func (nopObserver) MessageHandled(string, bool) {}
 
 // failingDeletes simulates a process that dies right after committing: the
 // message is never removed from the queue.

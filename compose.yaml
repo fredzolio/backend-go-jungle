@@ -175,6 +175,7 @@ services:
     environment:
       <<: *api-env
       INSTANCE_ID: api-1
+      ROLES: resolver,consumer,outbox,reconciler # the read-only sweep runs on one instance
   api-2:
     <<: *api
     environment:
@@ -205,6 +206,37 @@ services:
       timeout: 3s
       retries: 10
     mem_limit: 128m
+
+  # ---------- profile "obs": docker compose --profile obs up -d (or: make obs-up) ----------
+  prometheus:
+    <<: *hardening
+    image: prom/prometheus:v3.15.0
+    profiles: [obs]
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=2d", "--web.listen-address=:9090"]
+    volumes:
+      - ./infra/observability/prometheus:/etc/prometheus:ro
+    ports:
+      - "127.0.0.1:${JUNGLE_PROMETHEUS_PORT:-19090}:9090"
+    mem_limit: 256m
+
+  grafana:
+    <<: *hardening
+    image: grafana/grafana:13.2.3
+    profiles: [obs]
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin-local}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/jungle.json
+    volumes:
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:${JUNGLE_GRAFANA_PORT:-13000}:3000"
+    mem_limit: 256m
 
 networks:
   net:

@@ -58,6 +58,9 @@ func Start(ctx context.Context) (*Env, error) {
 	return env, nil
 }
 
+// HostPort is the mapped address of the server.
+func (e *Env) HostPort() string { return e.host }
+
 // Stop terminates the container.
 func (e *Env) Stop(ctx context.Context) error { return e.container.Terminate(ctx) }
 

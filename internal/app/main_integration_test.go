@@ -5,6 +5,8 @@ package app_test
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"testing"
 
@@ -19,7 +21,10 @@ import (
 	"github.com/fredzolio/backend-go-jungle/internal/testsupport/pgtest"
 )
 
-var env *pgtest.Env
+var (
+	env       *pgtest.Env
+	silentLog = slog.New(slog.NewTextHandler(io.Discard, nil))
+)
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()

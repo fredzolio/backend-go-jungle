@@ -20,15 +20,19 @@ type Config struct {
 	InstanceID string     `env:"INSTANCE_ID" envDefault:"local"`
 	LogLevel   slog.Level `env:"LOG_LEVEL"   envDefault:"info"`
 	// Roles enabled in this process (same binary everywhere): resolver, ...
-	Roles     []string  `env:"ROLES" envDefault:"resolver,consumer,outbox" envSeparator:","`
-	HTTP      HTTP      `envPrefix:"HTTP_"`
-	Lifecycle Lifecycle `envPrefix:"LIFECYCLE_"`
-	Reference Reference `envPrefix:"REFERENCE_"`
-	Postgres  Postgres  `envPrefix:"DB_"`
-	AWS       AWS       `envPrefix:"AWS_"`
-	OIDC      OIDC      `envPrefix:"OIDC_"`
-	Consumer  Consumer  `envPrefix:"CONSUMER_"`
-	Outbox    Outbox    `envPrefix:"OUTBOX_"`
+	Roles []string `env:"ROLES" envDefault:"resolver,consumer,outbox" envSeparator:","`
+	HTTP  HTTP     `envPrefix:"HTTP_"`
+	// MetricsAddr serves /metrics; never published by the edge.
+	MetricsAddr string `env:"METRICS_ADDR" envDefault:":9090"`
+	// ReconcileInterval paces the periodic reconciliation sweep (role "reconciler").
+	ReconcileInterval time.Duration `env:"RECONCILE_INTERVAL" envDefault:"1m"`
+	Lifecycle         Lifecycle     `envPrefix:"LIFECYCLE_"`
+	Reference         Reference     `envPrefix:"REFERENCE_"`
+	Postgres          Postgres      `envPrefix:"DB_"`
+	AWS               AWS           `envPrefix:"AWS_"`
+	OIDC              OIDC          `envPrefix:"OIDC_"`
+	Consumer          Consumer      `envPrefix:"CONSUMER_"`
+	Outbox            Outbox        `envPrefix:"OUTBOX_"`
 }
 
 // OIDC configures access-token validation. Issuer is the public `iss` value;

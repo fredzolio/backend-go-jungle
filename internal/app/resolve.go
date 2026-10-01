@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/fredzolio/backend-go-jungle/internal/domain/wagering"
 )
@@ -44,7 +45,7 @@ func (uc *Wagering) ResolveDue(ctx context.Context, limit int) (int, error) {
 }
 
 func (uc *Wagering) resolveOne(ctx context.Context, d DueTransaction) (bool, error) {
-	settled := false
+	settled, outcome := false, ""
 	err := uc.d.UoW.Do(ctx, func(ctx context.Context, tx Tx) error {
 		w, ok, err := tx.Wallets().TryGetForUpdate(ctx, d.WalletID)
 		if err != nil || !ok {
@@ -62,12 +63,22 @@ func (uc *Wagering) resolveOne(ctx context.Context, d DueTransaction) (bool, err
 			return nil // another resolver (or a wake-up race) already handled it
 		}
 		ext := t.External()
-		meta := Meta{CorrelationID: t.ID().String(), CausationID: ext.ReferenceExternalTransactionID}
+		meta := Meta{CorrelationID: t.ID().String(), CausationID: ext.ReferenceExternalTransactionID, Channel: "resolver"}
 		if err := uc.settle(ctx, settlement{tx: tx, t: t, w: w, meta: meta}); err != nil {
 			return err
 		}
 		settled = true
+		outcome = "rescheduled"
+		if t.Status().IsTerminal() {
+			outcome = "concluded_" + strings.ToLower(string(t.Status()))
+		}
 		return nil
 	})
+	if settled && err == nil {
+		uc.d.metrics().ReferenceAttempt(outcome)
+	}
+	if isContention(err) {
+		uc.d.metrics().ConcurrencyConflict("resolve")
+	}
 	return settled, err
 }

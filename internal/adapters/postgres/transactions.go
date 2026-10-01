@@ -151,3 +151,9 @@ func (s transactionStore) WakeDependents(ctx context.Context, providerID, extern
 		  AND next_attempt_at > $3`, providerID, externalID, at.UTC())
 	return classify("wake dependents", err)
 }
+
+func (s transactionStore) CountPendingReferences(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.q.QueryRow(ctx, `SELECT count(*) FROM wager_transactions WHERE status = 'PENDING_REFERENCE'`).Scan(&n)
+	return n, classify("count pending references", err)
+}

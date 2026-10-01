@@ -44,7 +44,7 @@ func principalFrom(ctx context.Context) (oidc.Principal, bool) {
 
 // observe assigns the correlation id (client-supplied when well-formed), logs one
 // structured line per request (never bodies or credentials) and recovers panics.
-func observe(log *slog.Logger, next http.Handler) http.Handler {
+func observe(log *slog.Logger, obs RequestObserver, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		id := r.Header.Get("X-Correlation-Id")
@@ -68,6 +68,9 @@ func observe(log *slog.Logger, next http.Handler) http.Handler {
 				attrs = append(attrs, slog.String("clientId", p.ClientID), slog.String("providerId", p.ProviderID))
 			}
 			log.InfoContext(r.Context(), "http request", attrs...)
+			if obs != nil {
+				obs.ObserveHTTP(r.Pattern, rec.status, time.Since(start))
+			}
 		}()
 		next.ServeHTTP(rec, r)
 	})

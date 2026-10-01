@@ -1,0 +1,26 @@
+groups:
+  - name: jungle
+    rules:
+      - alert: LedgerDivergence
+        expr: increase(jungle_reconciliations_total{result="divergent"}[10m]) > 0
+        labels: { severity: critical }
+        annotations: { summary: "A wallet balance diverges from its ledger" }
+      - alert: IngressDLQNotEmpty
+        expr: max(jungle_sqs_dlq_messages) > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations: { summary: "Messages are waiting in wager-transactions-dlq.fifo" }
+      - alert: OutboxLag
+        expr: max(jungle_outbox_oldest_pending_seconds) > 30
+        for: 1m
+        labels: { severity: warning }
+        annotations: { summary: "Outbox events older than 30s are not published" }
+      - alert: OutboxEventParked
+        expr: increase(jungle_outbox_publish_failures_total{dead="true"}[10m]) > 0
+        labels: { severity: critical }
+        annotations: { summary: "An outbox event was parked after max attempts (its wallet partition is blocked)" }
+      - alert: PendingReferencesGrowing
+        expr: max(jungle_pending_reference_transactions) > 100
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Many transactions are waiting for their references" }

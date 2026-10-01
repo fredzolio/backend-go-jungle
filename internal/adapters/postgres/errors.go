@@ -15,13 +15,17 @@ import (
 // transientCodes are SQLSTATEs after which retrying the whole transaction is safe:
 // nothing was committed.
 var transientCodes = map[string]bool{
-	"40001": true, // serialization_failure
-	"40P01": true, // deadlock_detected
-	"55P03": true, // lock_not_available (lock_timeout)
 	"57014": true, // query_canceled (statement_timeout)
 	"57P01": true, // admin_shutdown
 	"57P02": true, // crash_shutdown
 	"57P03": true, // cannot_connect_now
+}
+
+// contentionCodes are transient failures caused by concurrent writers.
+var contentionCodes = map[string]bool{
+	"40001": true, // serialization_failure
+	"40P01": true, // deadlock_detected
+	"55P03": true, // lock_not_available (lock_timeout)
 }
 
 // classify maps driver errors onto app sentinels, keeping the original for logs.
@@ -34,6 +38,8 @@ func classify(op string, err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		switch {
+		case contentionCodes[pgErr.Code]:
+			return fmt.Errorf("%s: %w: %w: %w", op, app.ErrTransient, app.ErrContention, err)
 		case transientCodes[pgErr.Code] || strings.HasPrefix(pgErr.Code, "08") || strings.HasPrefix(pgErr.Code, "53"):
 			return fmt.Errorf("%s: %w: %w", op, app.ErrTransient, err)
 		case strings.HasPrefix(pgErr.Code, "23"):

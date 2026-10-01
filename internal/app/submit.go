@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/fredzolio/backend-go-jungle/internal/domain/wagering"
 )
@@ -50,6 +51,7 @@ func (uc *Wagering) Submit(ctx context.Context, cmd SubmitCommand) (SubmitResult
 		return SubmitResult{}, ErrProviderMismatch
 	}
 	var result SubmitResult
+	start := time.Now()
 	err := uc.d.UoW.Do(ctx, func(ctx context.Context, tx Tx) error {
 		t, err := wagering.NewExternal(uc.d.IDs.New(), cmd.Request, uc.d.Clock.Now())
 		if err != nil {
@@ -75,8 +77,12 @@ func (uc *Wagering) Submit(ctx context.Context, cmd SubmitCommand) (SubmitResult
 		return nil
 	})
 	if err != nil {
+		if isContention(err) {
+			uc.d.metrics().ConcurrencyConflict("submit")
+		}
 		return SubmitResult{}, err
 	}
+	uc.d.metrics().TransactionConcluded(cmd.Meta.Channel, result.Transaction, result.Replay, time.Since(start))
 	return result, nil
 }
 

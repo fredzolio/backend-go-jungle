@@ -159,12 +159,18 @@ Notas da F2:
 - [x] E2E: evento `WalletBalanceChanged` chega à fila `wager-events-audit.fifo` com o contrato do envelope
 - [x] Achado do e2e com IAM aplicado: MiniStack exige `sns:PublishBatch` explicitamente (AWS usa `sns:Publish`) → policy lista as duas; o relay ficou em backoff sem perder nada e drenou sozinho após o reprovisionamento
 
-### F8 — Observabilidade e reconciliação — **PRÓXIMA**
-- [ ] Logs JSON com allowlist; métricas Prometheus; health
-- [ ] Reconciliação (REPEATABLE READ, `lag()`), sweeper periódico
-- [ ] Grafana/Prometheus (profile `obs`)
+### F8 — Observabilidade e reconciliação — **CONCLUÍDA** (2026-10-01)
+- [x] Logs JSON com **allowlist de atributos** (valores, saldos, corpos e credenciais nunca saem, mesmo por engano); identificadores `correlationId`, `messageId`, `transactionId`, `walletId`, `providerId`
+- [x] Port `app.Metrics` (Nop nos testes) + Prometheus em porta interna `:9090` (não roteada pelo edge — `/metrics` público = 404): transações por canal/tipo/status/replay, latência (histograma), **conflitos de concorrência** (`ErrContention`: lock timeout/deadlock/serialização/corrida otimista), mensagens SQS por resultado e duplicata, tentativas de referência, outbox publicados/falhas/dead, **atraso da outbox** (idade do mais antigo pendente), profundidade da DLQ, pendências de referência, reconciliações por resultado, requests HTTP por rota/status
+- [x] Reconciliação `POST /wallets/{id}/reconciliation` (scope `wallets.reconcile`): snapshot `REPEATABLE READ READ ONLY`, saldo reconstruído do ledger + **verificação de cadeia com `lag()`** (`chainIntact` extra), `difference = stored − calculated`; divergência → resposta, log `ERROR` e métrica; nada é alterado
+- [x] Sweep periódico (role `reconciler`, só no `api-1`) sobre todas as carteiras
+- [x] Profile `obs` (`make obs-up`): Prometheus `v3.15.0` (127.0.0.1:19090, 5 regras de alerta validadas com promtool: divergência, DLQ, atraso da outbox, evento estacionado, pendências) + Grafana `13.2.3` (127.0.0.1:13000, datasource e dashboard provisionados)
+- [x] **Teste da composição Fx**: `fx.ValidateApp` com todas as roles (mutação comprovou que pega provider faltando) + **teste de integração do ciclo de vida** (Postgres + MiniStack reais, todas as roles, start → serve → stop, `goleak` sem vazamento)
+- [x] Testes: allowlist do logger; reconciliação consistente após operações reais; **divergência de saldo e quebra de cadeia detectadas** (forçadas por superusuário com `session_replication_role=replica`, a única forma de burlar os triggers — limitação documentada); sweep conta divergências; endpoint HTTP interno-only
 
-### F9 — E2E multi-instância e falhas — pendente
+Achado da F8: duas substituições de texto no bootstrap falharam em silêncio (Reconciler e métricas fora do grafo) e só apareceram no boot → origem do teste `fx.ValidateApp`.
+
+### F9 — E2E multi-instância e falhas — **PRÓXIMA**
 - [ ] 3 processos + barreira `pg_stat_activity`
 - [ ] Proxies de falha (SQS sem delete, PG fora) + `faultinject`
 - [ ] Os 8 cenários obrigatórios + `-race`
@@ -210,6 +216,7 @@ Observação: o Keycloak responde 503 (bootstrap) por alguns segundos depois do 
 | 2026-10-01 | — | Pesquisa, arquitetura e estudo de 12 forks concluídos | Iniciar F0 |
 | 2026-10-01 | F0 | Fundação completa: compose isolado, Terraform provisionando Keycloak/MiniStack/Postgres, esqueleto Fx com health, edge Traefik, spikes executados | F1: domínio puro (Money primeiro) |
 | 2026-10-01 | F1 | Domínio puro completo (money, wallet, wagering, events) com testes unitários, fuzz, vetores golden e guardas arquiteturais; `go test -race` verde | F2: migrations goose + constraints/triggers + repositórios pgx |
+| 2026-10-01 | F8 | Logs com allowlist, métricas Prometheus, reconciliação com verificação de cadeia, sweep, Prometheus/Grafana, validação e ciclo de vida do Fx | F9: 3 processos + falhas |
 | 2026-10-01 | F7 | Outbox relay multi-instância (SNS FIFO, lease + fencing, ordem por carteira, recuperação de crash); cenário 6 verde | F8: métricas, logs, reconciliação |
 | 2026-10-01 | F6 | Consumer SQS com inbox transacional, DLQ, ordem FIFO, shutdown seguro; cenário 5 e cruzamento HTTP×SQS verdes | F7: outbox relay (SNS FIFO) |
 | 2026-10-01 | F5 | API HTTP + OIDC + OpenAPI; testes de contrato e e2e com Keycloak real verdes | F6: consumer SQS + inbox + DLQ |
