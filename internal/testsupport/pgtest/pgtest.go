@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration || system
 
 // Package pgtest runs a real PostgreSQL (testcontainers) for integration tests.
 // It recreates the production role model (owner / app / readonly, as provisioned

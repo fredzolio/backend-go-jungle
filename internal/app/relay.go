@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/fredzolio/backend-go-jungle/internal/platform/faults"
 )
 
 // RelayPolicy tunes the outbox relay.
@@ -55,6 +57,7 @@ func (r *Relay) RunOnce(ctx context.Context, batch int) (int, error) {
 		return 0, err
 	}
 	results := r.pub.Publish(ctx, events)
+	faults.Point("relay.after_publish")
 	for _, e := range events {
 		if perr := results[e.ID]; perr != nil {
 			dead := e.Attempts >= r.policy.MaxAttempts

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/fredzolio/backend-go-jungle/internal/domain/wagering"
+	"github.com/fredzolio/backend-go-jungle/internal/platform/faults"
 )
 
 // ResolveDue retries PENDING_REFERENCE transactions whose next attempt is due and
@@ -67,6 +68,7 @@ func (uc *Wagering) resolveOne(ctx context.Context, d DueTransaction) (bool, err
 		if err := uc.settle(ctx, settlement{tx: tx, t: t, w: w, meta: meta}); err != nil {
 			return err
 		}
+		faults.Point("resolver.before_commit")
 		settled = true
 		outcome = "rescheduled"
 		if t.Status().IsTerminal() {

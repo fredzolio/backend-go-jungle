@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration || system
 
 // Package awstest runs a real MiniStack (SQS/SNS) for integration tests and
 // creates isolated FIFO queues per test.

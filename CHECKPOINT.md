@@ -15,7 +15,7 @@
 1. Ler este arquivo inteiro (principalmente §4 Fases e §7 Log).
 2. `git log --oneline -15` para ver onde parou.
 3. `make up` sobe o ambiente; `make ps` confere saúde; `make down` desliga.
-   Testes: `make test-race` (unitários), `make test-integration` (Docker; containers efêmeros via testcontainers) e `make test-e2e` (stack no ar; tokens reais do Keycloak).
+   Testes: `make test-race` (unitários), `make test-integration` (Docker; containers efêmeros via testcontainers), `make test-system` (processos independentes + falhas) e `make test-e2e` (stack no ar; tokens reais do Keycloak).
    Verificação estática: `GOTOOLCHAIN=go1.27.1 gopls check $(find cmd internal migrations -name '*.go')`.
 4. Continuar a primeira caixa `[ ]` da fase marcada como **EM ANDAMENTO**.
 5. Ao terminar um bloco: marcar caixas, registrar no §7 e commitar.
@@ -170,12 +170,22 @@ Notas da F2:
 
 Achado da F8: duas substituições de texto no bootstrap falharam em silêncio (Reconciler e métricas fora do grafo) e só apareceram no boot → origem do teste `fx.ValidateApp`.
 
-### F9 — E2E multi-instância e falhas — **PRÓXIMA**
-- [ ] 3 processos + barreira `pg_stat_activity`
-- [ ] Proxies de falha (SQS sem delete, PG fora) + `faultinject`
-- [ ] Os 8 cenários obrigatórios + `-race`
+### F9 — E2E multi-instância e falhas — **CONCLUÍDA** (2026-10-01)
+- [x] Pontos de falha por build tag (`internal/platform/faults`): com `-tags faultinject`, `JUNGLE_FAULTS=<ponto>` mata o processo (exit 137, sem cleanup) em `consumer.after_commit`, `relay.after_publish`, `resolver.before_commit`; no binário de produção é no-op
+- [x] Harness de sistema (`test/system`, tag `system`, `make test-system`): compila o binário real com **`-race` + faultinject**, sobe **processos de SO independentes** (memória e pool próprios) contra Postgres e MiniStack reais e IdP local com JWKS; liga/mata (SIGKILL)/reinicia processos; falha se qualquer processo imprimir `DATA RACE` ou não encerrar limpo no SIGTERM; checagem final saldo = ledger (e versão) para todas as carteiras
+- [x] Cenário 1+4: mesma aposta 50× em paralelo distribuída entre 3 processos → 1 débito
+- [x] Cenário 2+4: 80+80 sobre 100 em processos diferentes, com **barreira em `pg_stat_activity` provando que os 2 processos esperaram o mesmo lock** → 1 processada, 1 rejeitada, saldo 20, 1 débito (3 rodadas)
+- [x] Cenário 3+4: 6 carteiras × 60 apostas simultâneas em 3 processos
+- [x] HTTP (processo A) × SQS (consumers B/C) da mesma operação → uma movimentação
+- [x] Cenário 5: processo consumer morto **após o commit e antes do delete** → redelivery tratada por outro processo sem nova movimentação
+- [x] Cenário 6: processo relay morto **entre publicação e confirmação** → outro processo republica após o lease (mesmo `eventId`)
+- [x] Cenários 7+8: REFUND `PENDING_REFERENCE` aceito por um processo que é morto → retomado por outro quando a BET chega
+- [x] Cenário 8: **todos os processos mortos** → novos processos devolvem o resultado original no replay, retomam pendência e a reconciliação fica consistente
+- [x] Estável com `-count=2`; e2e verde com a imagem de produção
 
-### F10 — Lab público — pendente
+Achado da F9: `pg_stat_activity` esconde `query`/`wait_event` de outros papéis → a barreira consulta como superusuário.
+
+### F10 — Lab público — **PRÓXIMA**
 - [ ] `compose.lab.yaml` (hostname público, limites, restart)
 - [ ] Terraform `edge-lab` (rota Caddy formato `preview`, reload via admin API)
 - [ ] Smoke test contra `https://jungle.lab.fredzol.io`
@@ -193,7 +203,7 @@ Achado da F8: duas substituições de texto no bootstrap falharam em silêncio (
 - [x] `MessageGroupId = walletId`; batch FIFO bloqueia grupo após falha (F6); claim da outbox por cabeça de partição (F7)
 - [x] Replay devolve saldo observado; mesmo externalId com chave nova → `ErrDuplicateExternalTransaction` (409 na F5)
 - [x] Validar assinatura, `iss`, `aud`; 404 para transação de outro provider
-- [ ] Testes sem mocks de PG/SQS/IdP; processos reais
+- [x] Testes sem mocks de PG/SQS/IdP; processos reais (integração, e2e com Keycloak real, sistema com processos independentes)
 
 ## 6. Spikes — resultados
 
@@ -216,6 +226,7 @@ Observação: o Keycloak responde 503 (bootstrap) por alguns segundos depois do 
 | 2026-10-01 | — | Pesquisa, arquitetura e estudo de 12 forks concluídos | Iniciar F0 |
 | 2026-10-01 | F0 | Fundação completa: compose isolado, Terraform provisionando Keycloak/MiniStack/Postgres, esqueleto Fx com health, edge Traefik, spikes executados | F1: domínio puro (Money primeiro) |
 | 2026-10-01 | F1 | Domínio puro completo (money, wallet, wagering, events) com testes unitários, fuzz, vetores golden e guardas arquiteturais; `go test -race` verde | F2: migrations goose + constraints/triggers + repositórios pgx |
+| 2026-10-01 | F9 | Os 8 cenários obrigatórios com processos independentes (-race, faultinject), contenção comprovada por pg_stat_activity | F10: exposição em jungle.lab.fredzol.io |
 | 2026-10-01 | F8 | Logs com allowlist, métricas Prometheus, reconciliação com verificação de cadeia, sweep, Prometheus/Grafana, validação e ciclo de vida do Fx | F9: 3 processos + falhas |
 | 2026-10-01 | F7 | Outbox relay multi-instância (SNS FIFO, lease + fencing, ordem por carteira, recuperação de crash); cenário 6 verde | F8: métricas, logs, reconciliação |
 | 2026-10-01 | F6 | Consumer SQS com inbox transacional, DLQ, ordem FIFO, shutdown seguro; cenário 5 e cruzamento HTTP×SQS verdes | F7: outbox relay (SNS FIFO) |
