@@ -196,10 +196,29 @@ Achado da F9: `pg_stat_activity` esconde `query`/`wait_event` de outros papéis 
 
 **Incidente (2026-10-01 19:27 UTC, ~1 min):** o primeiro desenho recarregava o Caddy do host pela admin API (`caddy reload`). O Caddy **2.6.2 do Ubuntu entra em panic em reloads** (`context: internal error: missing cancel error`) e a unit não tem `Restart=`, então `lab.fredzol.io`/`oc.fredzol.io` caíram até eu executar `sudo systemctl start caddy`. O `systemctl reload caddy` usado pelo `preview add` passa pelo mesmo caminho e também derrubaria o Caddy. Correção aplicada aqui: o stack só valida; o Makefile faz `systemctl restart`. **Recomendações para o repo zoliolab (fora deste escopo, não alteradas):** atualizar o Caddy (pacote oficial `caddy` ≥ 2.8) e adicionar `Restart=on-failure` à unit; trocar o `reload` do `preview` por `restart` enquanto isso.
 
-### F11 — Documentação e entrega — **PRÓXIMA**
-- [ ] README (pré-requisitos, env, filas, migrations, exemplos, testes)
-- [ ] ARCHITECTURE.md + ADRs + `docs/TESTING.md` (matriz cenário → teste → comando)
-- [ ] Teste de carga (k6) + relatório
+### F11 — Documentação e entrega — **CONCLUÍDA** (2026-10-01)
+- [x] README completo (pré-requisitos, variáveis, filas/IdP, migrations, exemplos de chamadas **executados e conferidos**, testes, lab)
+- [x] ARCHITECTURE.md com todas as decisões pedidas (dinheiro, transações, idempotência, locks, referências, reversões, inbox/outbox, authN/Z, Fx/shutdown, observabilidade, infra) + limitações e interpretações. ADRs consolidados como seções do ARCHITECTURE (decisão + motivo), em vez de arquivos separados
+- [x] `docs/TESTING.md`: matriz cenário obrigatório → teste → comando, suítes/tags, simulação de falhas
+- [x] `docs/LOADTEST.md`: k6 (`make load-test`), ambiente, metodologia, req/s, p50/p95/p99, erros, conflitos, **atraso da outbox** com medição por etapa do relay
+- [x] Melhorias de desempenho vindas do teste de carga: claim da outbox com `NOT EXISTS` + índices parciais (migration 00006), confirmação em lote, `PublishBatch` concorrente, lote 200 (publicação ~30 → ~80–90 eventos/s; o gargalo restante é o SNS emulado)
+- [x] Incidente: MiniStack reiniciou durante a carga (fila de auditoria acumulando eventos, limite de 256 MB) e voltou sem estado → retenção de 1 h na auditoria, limite 768 MB, `make recover-broker`; nenhum dado financeiro perdido (outbox retém os eventos)
+- [x] Arquivos de teste de sistema divididos para respeitar o teto de 250 linhas
+
+## 8. Estado final
+
+Todas as fases concluídas. Ambiente no ar em **https://jungle.lab.fredzol.io** (modo lab, `.env.lab`).
+
+| Verificação | Resultado |
+|---|---|
+| `gofmt`, `go vet` (todas as tags), `gopls check` | limpos |
+| Unitários (`-race -shuffle`) | verdes |
+| Integração (12 pacotes, testcontainers) | verdes |
+| Sistema (8 cenários, 3+ processos `-race`, faultinject) | verdes |
+| E2E (Keycloak real, IAM aplicado) local e pelo HTTPS público | verdes |
+| Redocly (OpenAPI), promtool (alertas), `terraform validate/fmt` | válidos |
+
+Desligar quando quiser: `make lab-unexpose` (tira a rota pública) e `make down` (para tudo, mantém dados) ou `make destroy` (apaga tudo, inclusive a rota).
 
 ## 5. Lições dos forks (checklist de regressão)
 
@@ -232,6 +251,7 @@ Observação: o Keycloak responde 503 (bootstrap) por alguns segundos depois do 
 | 2026-10-01 | — | Pesquisa, arquitetura e estudo de 12 forks concluídos | Iniciar F0 |
 | 2026-10-01 | F0 | Fundação completa: compose isolado, Terraform provisionando Keycloak/MiniStack/Postgres, esqueleto Fx com health, edge Traefik, spikes executados | F1: domínio puro (Money primeiro) |
 | 2026-10-01 | F1 | Domínio puro completo (money, wallet, wagering, events) com testes unitários, fuzz, vetores golden e guardas arquiteturais; `go test -race` verde | F2: migrations goose + constraints/triggers + repositórios pgx |
+| 2026-10-01 | F11 | README/ARCHITECTURE/TESTING/LOADTEST; carga 220 tx/s p99 ~275 ms sem erros; otimizações da outbox; recuperação do broker | Entregue |
 | 2026-10-01 | F10 | https://jungle.lab.fredzol.io no ar (Terraform edge-lab, superfície mínima, e2e pelo HTTPS); incidente do reload do Caddy 2.6.2 corrigido e documentado | F11: README, ARCHITECTURE, ADRs, TESTING, carga |
 | 2026-10-01 | F9 | Os 8 cenários obrigatórios com processos independentes (-race, faultinject), contenção comprovada por pg_stat_activity | F10: exposição em jungle.lab.fredzol.io |
 | 2026-10-01 | F8 | Logs com allowlist, métricas Prometheus, reconciliação com verificação de cadeia, sweep, Prometheus/Grafana, validação e ciclo de vida do Fx | F9: 3 processos + falhas |

@@ -20,21 +20,20 @@ func NewOutboxRelay(pool *pgxpool.Pool) *OutboxRelay { return &OutboxRelay{pool:
 
 var _ app.OutboxRelayStore = (*OutboxRelay)(nil)
 
-// Claim: `heads` is the oldest unpublished event of every partition. A head that
-// is leased, backing off or parked (dead) blocks its partition: order wins over
-// availability, and a parked head is alerted on (outbox backlog metric). SKIP
-// LOCKED plus the re-checked lease condition keep concurrent relays from claiming
-// the same row.
+// Claim takes the oldest pending events that have no earlier unpublished event in
+// their partition (the partition "head"). A head that is leased, backing off or
+// parked (dead) keeps blocking its partition: order wins over availability, and a
+// parked head is alerted on. SKIP LOCKED skips heads another relay is claiming;
+// the events behind them are not eligible because the head is still unpublished.
+// Both lookups use partial indexes over unpublished rows (migration 00006).
 func (r *OutboxRelay) Claim(ctx context.Context, owner string, now time.Time, lease time.Duration, limit int) ([]app.ClaimedEvent, error) {
 	rows, err := r.pool.Query(ctx, `
-		WITH heads AS (
-			SELECT DISTINCT ON (partition_key) id
-			  FROM outbox_events
-			 WHERE published_at IS NULL
-			 ORDER BY partition_key, seq
-		), candidates AS (
-			SELECT o.id FROM outbox_events o JOIN heads h ON h.id = o.id
-			 WHERE o.dead_at IS NULL AND o.next_attempt_at <= $1 AND (o.locked_until IS NULL OR o.locked_until < $1)
+		WITH candidates AS (
+			SELECT o.id FROM outbox_events o
+			 WHERE o.published_at IS NULL AND o.dead_at IS NULL AND o.next_attempt_at <= $1
+			   AND (o.locked_until IS NULL OR o.locked_until < $1)
+			   AND NOT EXISTS (SELECT 1 FROM outbox_events e
+			                    WHERE e.partition_key = o.partition_key AND e.published_at IS NULL AND e.seq < o.seq)
 			 ORDER BY o.seq
 			 LIMIT $2
 			 FOR UPDATE OF o SKIP LOCKED
@@ -60,14 +59,21 @@ func (r *OutboxRelay) Claim(ctx context.Context, owner string, now time.Time, le
 	return out, classify("claim outbox", rows.Err())
 }
 
-func (r *OutboxRelay) MarkPublished(ctx context.Context, id, claimID uuid.UUID, at time.Time) (bool, error) {
-	tag, err := r.pool.Exec(ctx, `UPDATE outbox_events
-		   SET published_at = $3, locked_by = NULL, locked_until = NULL, last_error = NULL
-		 WHERE id = $1 AND claim_id = $2 AND published_at IS NULL`, id, claimID, at.UTC())
-	if err != nil {
-		return false, classify("mark published", err)
+// MarkPublished confirms publications in one statement, each fenced by its claim
+// id; it returns how many were confirmed (the rest lost their lease).
+func (r *OutboxRelay) MarkPublished(ctx context.Context, events []app.ClaimedEvent, at time.Time) (int, error) {
+	ids, claims := make([]uuid.UUID, len(events)), make([]uuid.UUID, len(events))
+	for i, e := range events {
+		ids[i], claims[i] = e.ID, e.ClaimID
 	}
-	return tag.RowsAffected() == 1, nil
+	tag, err := r.pool.Exec(ctx, `UPDATE outbox_events o
+		   SET published_at = $3, locked_by = NULL, locked_until = NULL, last_error = NULL
+		  FROM unnest($1::uuid[], $2::uuid[]) AS c(id, claim_id)
+		 WHERE o.id = c.id AND o.claim_id = c.claim_id AND o.published_at IS NULL`, ids, claims, at.UTC())
+	if err != nil {
+		return 0, classify("mark published", err)
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 func (r *OutboxRelay) Reschedule(ctx context.Context, e app.ClaimedEvent, next time.Time, lastErr string, dead bool) error {

@@ -30,3 +30,4 @@ coverage.out
 
 # e2e scratch (credentials copied from the provisioned volume)
 .e2e-*/
+test/load/last-summary.json

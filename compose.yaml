@@ -123,7 +123,9 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
-    mem_limit: 256m
+    # Messages live in memory; state is saved only on a graceful stop. A crash loses
+    # queues/IAM: recover with `make recover-broker` (Terraform recreates, APIs reload).
+    mem_limit: 768m
 
   provisioner:
     <<: *hardening

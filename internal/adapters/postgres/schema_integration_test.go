@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"strings"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 
 	"github.com/fredzolio/backend-go-jungle/internal/adapters/postgres"
 	"github.com/fredzolio/backend-go-jungle/internal/app"
+	"github.com/fredzolio/backend-go-jungle/migrations"
 )
 
 func sqlState(t *testing.T, err error) string {
@@ -45,7 +47,11 @@ func TestMigrations_apply_revert_and_reapply(t *testing.T) {
 	if err := postgres.Migrate(ctx, dsn, "status", &status); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(status.String(), "applied") != 5 || strings.Contains(status.String(), "pending") {
+	files, err := fs.Glob(migrations.FS, "*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(status.String(), "applied") != len(files) || strings.Contains(status.String(), "pending") {
 		t.Fatalf("status after reapply:\n%s", status.String())
 	}
 }

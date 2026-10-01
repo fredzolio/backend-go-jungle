@@ -222,8 +222,8 @@ func TestTwo_relays_contending_publish_everything_in_order(t *testing.T) {
 // crashBeforeConfirm publishes but never confirms (process died after publish).
 type crashBeforeConfirm struct{ *postgres.OutboxRelay }
 
-func (crashBeforeConfirm) MarkPublished(context.Context, uuid.UUID, uuid.UUID, time.Time) (bool, error) {
-	return false, errors.New("simulated crash before confirming publication")
+func (crashBeforeConfirm) MarkPublished(context.Context, []app.ClaimedEvent, time.Time) (int, error) {
+	return 0, errors.New("simulated crash before confirming publication")
 }
 
 // Mandatory scenario 6: crash between publication and confirmation. Another relay

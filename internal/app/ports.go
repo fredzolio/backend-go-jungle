@@ -166,8 +166,9 @@ type OutboxRelayStore interface {
 	// of each partition (wallet) is eligible, so per-wallet order is preserved
 	// across any number of relays. Expired leases are reclaimable.
 	Claim(ctx context.Context, owner string, now time.Time, lease time.Duration, limit int) ([]ClaimedEvent, error)
-	// MarkPublished confirms a publication; false means the lease was lost.
-	MarkPublished(ctx context.Context, id, claimID uuid.UUID, at time.Time) (bool, error)
+	// MarkPublished confirms publications (fenced by claim id) and returns how many
+	// were confirmed; the others lost their lease and may be republished.
+	MarkPublished(ctx context.Context, events []ClaimedEvent, at time.Time) (int, error)
 	// Reschedule releases the lease after a failed publication (dead parks it).
 	Reschedule(ctx context.Context, e ClaimedEvent, next time.Time, lastErr string, dead bool) error
 	// Backlog reports the age of the oldest pending event and the pending count.
