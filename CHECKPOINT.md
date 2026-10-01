@@ -32,13 +32,15 @@ Tudo pertence ao projeto Compose **`jungle`** e não toca em nada fora dele.
 | Volumes | `jungle_pgdata`, `jungle_tfstate`, `jungle_provisioned`, `jungle_ministack` |
 | Imagens locais | `jungle/*` |
 | Portas no host | **somente `127.0.0.1`**: `18080` (entrada pública/edge), `18090` (admin), `15432` (Postgres p/ debug), `14566` (MiniStack p/ testes) |
-| Exposição pública | 1 rota no Caddy do host: `jungle.lab.fredzol.io → 127.0.0.1:18080` (Fase 10, via Terraform `edge-lab`) |
+| Exposição pública | 1 rota no Caddy do host: `jungle.lab.fredzol.io → 127.0.0.1:18080` (`make lab-expose` / `make lab-unexpose`, Terraform `edge-lab`) |
+| Config do lab | `.env.lab` (0600, fora do git; `make lab-init`); usado automaticamente pelo Makefile |
 
 | Ação | Comando |
 |---|---|
 | Ligar | `make up` |
 | Desligar (mantém dados) | `make down` |
-| Desligar e apagar **tudo** (containers, volumes, imagens locais, rota pública) | `make destroy` |
+| Desligar e apagar **tudo** (rota pública, containers, volumes, imagens locais) | `make destroy` |
+| Publicar / despublicar | `make lab-expose` / `make lab-unexpose` (reiniciam o Caddy do host: ~1 s para todos os sites) |
 | Status / logs | `make ps` / `make logs` |
 
 ## 3. Decisões assumidas (registro)
@@ -185,12 +187,16 @@ Achado da F8: duas substituições de texto no bootstrap falharam em silêncio (
 
 Achado da F9: `pg_stat_activity` esconde `query`/`wait_event` de outros papéis → a barreira consulta como superusuário.
 
-### F10 — Lab público — **PRÓXIMA**
-- [ ] `compose.lab.yaml` (hostname público, limites, restart)
-- [ ] Terraform `edge-lab` (rota Caddy formato `preview`, reload via admin API)
-- [ ] Smoke test contra `https://jungle.lab.fredzol.io`
+### F10 — Lab público — **CONCLUÍDA** (2026-10-01)
+- [x] `make lab-init` gera `.env.lab` (0600, fora do git) com `PUBLIC_BASE_URL=https://jungle.lab.fredzol.io` e segredos de bootstrap aleatórios; o Makefile usa `.env.lab` automaticamente quando existe (no lugar de um `compose.lab.yaml`: só a URL e os segredos mudam)
+- [x] Ambiente recriado do zero com os segredos fortes (`make destroy && make up`)
+- [x] Terraform `stacks/edge-lab` (state próprio `edge-lab.tfstate`, serviço `edge-lab`, profile `edge`): grava `/etc/caddy/conf.d/jungle.caddy` **no formato do `preview`** (aparece no `preview ls`) e valida o Caddyfile com o Caddy CLI 2.6.2; `make lab-expose` / `make lab-unexpose` aplicam e então reiniciam o Caddy do host; `make destroy` remove a rota primeiro
+- [x] Superfície pública mínima (Traefik): API, `/docs`, `/openapi.yaml` e, do Keycloak, só `token`, `certs` e `.well-known` do realm `jungle`; console admin, realm master, account e `/metrics` → 404; negócio sem token → 401. Admin do Keycloak: túnel `ssh -L 18090:127.0.0.1:18090 lab` → `http://localhost:18090/auth/admin`
+- [x] Certificado Let's Encrypt emitido; **suíte e2e completa verde pelo HTTPS público** (tokens do Keycloak com `iss=https://jungle.lab.fredzol.io/auth/realms/jungle`)
 
-### F11 — Documentação e entrega — pendente
+**Incidente (2026-10-01 19:27 UTC, ~1 min):** o primeiro desenho recarregava o Caddy do host pela admin API (`caddy reload`). O Caddy **2.6.2 do Ubuntu entra em panic em reloads** (`context: internal error: missing cancel error`) e a unit não tem `Restart=`, então `lab.fredzol.io`/`oc.fredzol.io` caíram até eu executar `sudo systemctl start caddy`. O `systemctl reload caddy` usado pelo `preview add` passa pelo mesmo caminho e também derrubaria o Caddy. Correção aplicada aqui: o stack só valida; o Makefile faz `systemctl restart`. **Recomendações para o repo zoliolab (fora deste escopo, não alteradas):** atualizar o Caddy (pacote oficial `caddy` ≥ 2.8) e adicionar `Restart=on-failure` à unit; trocar o `reload` do `preview` por `restart` enquanto isso.
+
+### F11 — Documentação e entrega — **PRÓXIMA**
 - [ ] README (pré-requisitos, env, filas, migrations, exemplos, testes)
 - [ ] ARCHITECTURE.md + ADRs + `docs/TESTING.md` (matriz cenário → teste → comando)
 - [ ] Teste de carga (k6) + relatório
@@ -226,6 +232,7 @@ Observação: o Keycloak responde 503 (bootstrap) por alguns segundos depois do 
 | 2026-10-01 | — | Pesquisa, arquitetura e estudo de 12 forks concluídos | Iniciar F0 |
 | 2026-10-01 | F0 | Fundação completa: compose isolado, Terraform provisionando Keycloak/MiniStack/Postgres, esqueleto Fx com health, edge Traefik, spikes executados | F1: domínio puro (Money primeiro) |
 | 2026-10-01 | F1 | Domínio puro completo (money, wallet, wagering, events) com testes unitários, fuzz, vetores golden e guardas arquiteturais; `go test -race` verde | F2: migrations goose + constraints/triggers + repositórios pgx |
+| 2026-10-01 | F10 | https://jungle.lab.fredzol.io no ar (Terraform edge-lab, superfície mínima, e2e pelo HTTPS); incidente do reload do Caddy 2.6.2 corrigido e documentado | F11: README, ARCHITECTURE, ADRs, TESTING, carga |
 | 2026-10-01 | F9 | Os 8 cenários obrigatórios com processos independentes (-race, faultinject), contenção comprovada por pg_stat_activity | F10: exposição em jungle.lab.fredzol.io |
 | 2026-10-01 | F8 | Logs com allowlist, métricas Prometheus, reconciliação com verificação de cadeia, sweep, Prometheus/Grafana, validação e ciclo de vida do Fx | F9: 3 processos + falhas |
 | 2026-10-01 | F7 | Outbox relay multi-instância (SNS FIFO, lease + fencing, ordem por carteira, recuperação de crash); cenário 6 verde | F8: métricas, logs, reconciliação |

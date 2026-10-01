@@ -1,9 +1,10 @@
 http:
   routers:
-    # Public: only the realm endpoints (token, JWKS, discovery). Admin console stays private.
+    # Public: only what client_credentials needs (token, JWKS, discovery) of realm "jungle".
+    # Admin console, master realm, account console and login pages stay private.
     keycloak-realm:
       entryPoints: [web]
-      rule: "PathPrefix(`/auth/realms/`) || PathPrefix(`/auth/resources/`)"
+      rule: "PathRegexp(`^/auth/realms/jungle/(protocol/openid-connect/(token|certs)|\\.well-known/openid-configuration)$`)"
       service: keycloak
       priority: 100
     api:

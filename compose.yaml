@@ -207,6 +207,19 @@ services:
       retries: 10
     mem_limit: 128m
 
+  # ---------- profile "edge": public route on the VM Caddy (make lab-expose / lab-unexpose) ----------
+  edge-lab:
+    image: jungle/edge-lab:local
+    build:
+      context: infra/terraform
+      dockerfile: edge.Dockerfile
+    profiles: [edge]
+    networks: [net]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - /etc/caddy:/etc/caddy # conf.d is the VM's preview contract; Caddyfile is read to adapt
+      - tfstate:/state
+
   # ---------- profile "obs": docker compose --profile obs up -d (or: make obs-up) ----------
   prometheus:
     <<: *hardening
