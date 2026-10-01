@@ -44,3 +44,4 @@ func (s stores) Wallets() app.WalletStore           { return walletStore(s) }
 func (s stores) Transactions() app.TransactionStore { return transactionStore(s) }
 func (s stores) Ledger() app.LedgerStore            { return ledgerStore(s) }
 func (s stores) Outbox() app.OutboxStore            { return outboxStore(s) }
+func (s stores) Inbox() app.InboxStore              { return inboxStore(s) }

@@ -139,12 +139,18 @@ Notas da F2:
 - [x] Testes de integração do contrato (Postgres real + verificação JWT real com JWKS local): 7 casos de token inválido, autorização interna × provider, abertura/conflito, todos os status do submit, isolamento entre providers em leituras e replays, paginação por cursor
 - [x] **E2E com o Keycloak real** pelo edge (`make up && make test-e2e`): token ausente/adulterado/expirado (client de 5 s) → 401; fluxo completo com isolamento, replay e 80+80
 
-### F6 — Consumer SQS + inbox — **PRÓXIMA**
-- [ ] Inbox na mesma transação; delete pós-commit; DLQ explícita p/ veneno; backoff por visibility
-- [ ] Bloqueio de grupo FIFO no batch; shutdown seguro
-- [ ] Cenários cruzados HTTP×SQS
+### F6 — Consumer SQS + inbox — **CONCLUÍDA** (2026-10-01)
+- [x] `Wagering.Ingest`: mesmo caso de uso do HTTP; inbox `(consumer, messageId)` gravada **na mesma transação** (gancho `Within`); redelivery = replay + inbox duplicada; mesmo `messageId` com conteúdo diferente → `ErrMessageConflict` (rollback, DLQ)
+- [x] Envelope estrito (`WagerTransactionRequested`, `messageId`, RFC 3339, `data`), hash canônico do envelope (identidade + payload hash + chave)
+- [x] Autorização do remetente: `SenderId` × `senders.json` (Terraform) + contas confiáveis (MiniStack: account como SenderId, D10); producer não autorizado → DLQ
+- [x] Classificação: commit → delete; permanente (`MALFORMED`, `UNAUTHORIZED_SENDER`, `IDEMPOTENCY_KEY_REUSED`, `DUPLICATE_EXTERNAL_TRANSACTION`, `PROVIDER_MISMATCH`, `WALLET_NOT_FOUND`, `MESSAGE_ID_CONFLICT`, `INTEGRITY_VIOLATION`, `RESERVED_KIND`) → envio explícito à DLQ com `errorCode` + delete; demais → mantém com visibility backoff exponencial (1s…60s) e redrive após `maxReceiveCount=5`
+- [x] FIFO: `MessageGroupId=walletId`; falha numa mensagem bloqueia o grupo no batch e libera as seguintes (visibility 0); rejeição de negócio é terminal (delete)
+- [x] Shutdown: cancelamento para o long-poll na hora; mensagem em andamento termina (`PROCESS_TIMEOUT` 20s < visibility 60s) com contexto próprio; restante do batch liberado; delete/DLQ com contexto próprio
+- [x] `workers.Loop` (N pollers por processo, `CONSUMER_POLLERS=2`), role `consumer`, `awsx.QueueURL` com retry (SQS indisponível no start não derruba o processo)
+- [x] Integração (MiniStack + Postgres reais, testcontainers): aplicação + inbox + delete; redelivery move uma vez; **HTTP × SQS = uma movimentação**; veneno → DLQ (`MALFORMED`×2, `MESSAGE_ID_CONFLICT`); remetente não autorizado; **cenário 5: commit e morte antes do delete → redelivery segura em outro consumer**; ordem FIFO preservada após falha transitória. Estável com `-count=3`
+- [x] E2E no stack real: produtor IAM do `provider-a` (AUTH=true) → SQS → carteira; cópia HTTP é replay; producer não consegue consumir a fila
 
-### F7 — Outbox relay — pendente
+### F7 — Outbox relay — **PRÓXIMA**
 - [ ] Claim por cabeça de partição + lease + fencing token; publish SNS FIFO fora da transação; dead_at
 - [ ] Recuperação entre commit/publish e publish/mark
 
@@ -173,7 +179,7 @@ Notas da F2:
 - [x] Índice de reversão **sem** `kind` (domínio na F1, índice no banco na F2, com teste e mutação de controle)
 - [x] Todo `SKIP LOCKED` dentro de transação (resolver: carteira `SKIP LOCKED` + transação travada na mesma transação SQL)
 - [ ] Nunca I/O de rede com transação SQL aberta
-- [ ] `MessageGroupId = walletId`; claim da outbox por cabeça de partição; batch FIFO bloqueia grupo após falha
+- [~] `MessageGroupId = walletId` e batch FIFO bloqueia grupo após falha (F6); claim da outbox por cabeça de partição (F7)
 - [x] Replay devolve saldo observado; mesmo externalId com chave nova → `ErrDuplicateExternalTransaction` (409 na F5)
 - [x] Validar assinatura, `iss`, `aud`; 404 para transação de outro provider
 - [ ] Testes sem mocks de PG/SQS/IdP; processos reais
@@ -199,6 +205,7 @@ Observação: o Keycloak responde 503 (bootstrap) por alguns segundos depois do 
 | 2026-10-01 | — | Pesquisa, arquitetura e estudo de 12 forks concluídos | Iniciar F0 |
 | 2026-10-01 | F0 | Fundação completa: compose isolado, Terraform provisionando Keycloak/MiniStack/Postgres, esqueleto Fx com health, edge Traefik, spikes executados | F1: domínio puro (Money primeiro) |
 | 2026-10-01 | F1 | Domínio puro completo (money, wallet, wagering, events) com testes unitários, fuzz, vetores golden e guardas arquiteturais; `go test -race` verde | F2: migrations goose + constraints/triggers + repositórios pgx |
+| 2026-10-01 | F6 | Consumer SQS com inbox transacional, DLQ, ordem FIFO, shutdown seguro; cenário 5 e cruzamento HTTP×SQS verdes | F7: outbox relay (SNS FIFO) |
 | 2026-10-01 | F5 | API HTTP + OIDC + OpenAPI; testes de contrato e e2e com Keycloak real verdes | F6: consumer SQS + inbox + DLQ |
 | 2026-10-01 | F4 | Reversões e worker de PENDING_REFERENCE (multi-instância, TTL, backoff, wake-up); cenário obrigatório 7 verde | F5: HTTP + OIDC + OpenAPI |
 | 2026-10-01 | F3 | Casos de uso OpenWallet/Submit com idempotência persistente e liquidação compartilhada; cenários de concorrência obrigatórios (1, 2, 3) verdes contra Postgres real | F4: reversões + worker de PENDING_REFERENCE |

@@ -5,6 +5,7 @@ package awsx
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -45,4 +46,20 @@ func IngressHealthCheck(client ConsumerSQS, cfg config.Config) health.Check {
 		}
 		return nil
 	}}
+}
+
+// QueueURL resolves a queue URL, retrying until ctx ends (SQS may be briefly
+// unavailable when a process starts).
+func QueueURL(ctx context.Context, client *sqs.Client, name string) (string, error) {
+	for {
+		out, err := client.GetQueueUrl(ctx, &sqs.GetQueueUrlInput{QueueName: aws.String(name)})
+		if err == nil {
+			return aws.ToString(out.QueueUrl), nil
+		}
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("resolve queue %s: %w", name, err)
+		case <-time.After(time.Second):
+		}
+	}
 }

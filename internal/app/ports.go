@@ -44,6 +44,7 @@ type Tx interface {
 	Transactions() TransactionStore
 	Ledger() LedgerStore
 	Outbox() OutboxStore
+	Inbox() InboxStore
 }
 
 // WalletStore persists the Wallet aggregate.
@@ -113,4 +114,20 @@ type OutboxRecord struct {
 // OutboxStore records events in the same transaction as the state that caused them.
 type OutboxStore interface {
 	Insert(ctx context.Context, records ...OutboxRecord) error
+}
+
+// InboxRecord is the durable identity of one consumed message.
+type InboxRecord struct {
+	ReceivedAt    time.Time
+	ConsumerName  string
+	MessageID     string
+	PayloadHash   string
+	TransactionID uuid.UUID
+}
+
+// InboxStore deduplicates messages per consumer.
+type InboxStore interface {
+	// Complete records the message as handled; inserted=false returns the hash
+	// stored by the first delivery.
+	Complete(ctx context.Context, r InboxRecord) (inserted bool, storedHash string, err error)
 }

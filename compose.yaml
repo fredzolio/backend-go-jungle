@@ -42,6 +42,9 @@ x-api-env: &api-env
   OIDC_ISSUER: ${PUBLIC_BASE_URL:-http://localhost:18080}/auth/realms/jungle
   OIDC_JWKS_URL: http://keycloak:8080/auth/realms/jungle/protocol/openid-connect/certs
   OIDC_AUDIENCE: jungle-api
+  ROLES: resolver,consumer
+  CONSUMER_SENDERS_FILE: /provisioned/aws/senders.json
+  CONSUMER_TRUSTED_ACCOUNTS: "000000000000" # MiniStack reports the account as SenderId (see CHECKPOINT D10)
 
 services:
   postgres:

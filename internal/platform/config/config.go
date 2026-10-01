@@ -20,13 +20,14 @@ type Config struct {
 	InstanceID string     `env:"INSTANCE_ID" envDefault:"local"`
 	LogLevel   slog.Level `env:"LOG_LEVEL"   envDefault:"info"`
 	// Roles enabled in this process (same binary everywhere): resolver, ...
-	Roles     []string  `env:"ROLES" envDefault:"resolver" envSeparator:","`
+	Roles     []string  `env:"ROLES" envDefault:"resolver,consumer" envSeparator:","`
 	HTTP      HTTP      `envPrefix:"HTTP_"`
 	Lifecycle Lifecycle `envPrefix:"LIFECYCLE_"`
 	Reference Reference `envPrefix:"REFERENCE_"`
 	Postgres  Postgres  `envPrefix:"DB_"`
 	AWS       AWS       `envPrefix:"AWS_"`
 	OIDC      OIDC      `envPrefix:"OIDC_"`
+	Consumer  Consumer  `envPrefix:"CONSUMER_"`
 }
 
 // OIDC configures access-token validation. Issuer is the public `iss` value;
@@ -113,7 +114,22 @@ type AWS struct {
 	EndpointURL  string      `env:"ENDPOINT_URL"`
 	Region       string      `env:"REGION"            envDefault:"us-east-1"`
 	IngressQueue string      `env:"SQS_INGRESS_QUEUE" envDefault:"wager-transactions.fifo"`
+	IngressDLQ   string      `env:"SQS_INGRESS_DLQ"   envDefault:"wager-transactions-dlq.fifo"`
 	Consumer     Credentials `envPrefix:"CONSUMER_"`
+}
+
+// Consumer tunes the SQS ingress consumer (role "consumer").
+type Consumer struct {
+	Name        string `env:"NAME"            envDefault:"wager-ingress"`
+	SendersFile string `env:"SENDERS_FILE"    envDefault:"/provisioned/aws/senders.json"`
+	// Sender ids allowed to speak for any known provider (MiniStack reports the
+	// account id as SenderId). Empty against real AWS.
+	TrustedAccounts []string      `env:"TRUSTED_ACCOUNTS" envSeparator:","`
+	ProcessTimeout  time.Duration `env:"PROCESS_TIMEOUT" envDefault:"20s"`
+	MaxBackoff      time.Duration `env:"MAX_BACKOFF"     envDefault:"60s"`
+	Pollers         int           `env:"POLLERS"         envDefault:"2"`
+	MaxMessages     int32         `env:"MAX_MESSAGES"    envDefault:"10"`
+	WaitSeconds     int32         `env:"WAIT_SECONDS"    envDefault:"20"`
 }
 
 // Credentials is one IAM principal; each component gets its own.
