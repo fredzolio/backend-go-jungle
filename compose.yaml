@@ -16,7 +16,7 @@ x-api: &api
   restart: unless-stopped
   read_only: true
   depends_on:
-    provisioner:
+    migrate:
       condition: service_completed_successfully
   volumes:
     - provisioned:/provisioned:ro
@@ -139,10 +139,30 @@ services:
       - provisioned:/provisioned
     mem_limit: 768m
 
-  api-1:
-    <<: *api
+  # Applies versioned migrations as the schema owner, then exits. APIs start after it.
+  migrate:
+    <<: *hardening
+    image: jungle/api:local
     build:
       context: .
+    command: ["migrate", "up"]
+    restart: "no"
+    read_only: true
+    depends_on:
+      provisioner:
+        condition: service_completed_successfully
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DB_HOST: postgres
+      DB_NAME: jungle
+      DB_USER: jungle_owner
+      DB_PASSWORD_FILE: /provisioned/db/owner_password
+    volumes:
+      - provisioned:/provisioned:ro
+    mem_limit: 128m
+
+  api-1:
+    <<: *api
     environment:
       <<: *api-env
       INSTANCE_ID: api-1
