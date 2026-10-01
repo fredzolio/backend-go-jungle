@@ -77,17 +77,26 @@ Legenda: `[ ]` pendente · `[x]` feito · `[~]` parcial · **status** da fase no
 - [x] Spike: `iss` estável por fora e por dentro → **sim**
 - [x] `docker compose up --build` verde de ponta a ponta; ciclo `down`/`up` reprovisiona com "No changes"
 
-### F1 — Domínio puro — **PRÓXIMA**
-- [ ] `Money` (parse estrito, aritmética com overflow, moeda, JSON) + fuzz
-- [ ] `Wallet` (criação/reidratação, débito/crédito, versão)
-- [ ] `WagerTransaction` (tipos, máquina de estados, origem interna/externa, OPENING)
-- [ ] `LedgerEntry` (validação balanceAfter)
-- [ ] Eventos de domínio tipados + envelope
-- [ ] Hash de idempotência (JCS) com vetores golden
-- [ ] Erros classificáveis + códigos de falha estáveis
-- [ ] Teste AST "sem float" + depguard (domínio não importa fx/http/aws/pgx)
+### F1 — Domínio puro — **CONCLUÍDA** (2026-10-01)
+- [x] `Money` (parse estrito, aritmética com overflow, moeda, JSON só com string) + fuzz (~340k execs)
+- [x] `Wallet` (abertura com/sem saldo, reidratação, débito/crédito, versão só muda com saldo)
+- [x] `WagerTransaction` (tipos, máquina de estados, origem interna/externa, OPENING, prazo/tentativas de referência)
+- [x] `LedgerEntry` (valida `balanceAfter = balanceBefore ± amount`, não negativo)
+- [x] Regras de decisão `Evaluate` (soma selada Move/NoMove/Reject/AwaitReference) para os 5 tipos + reversões
+- [x] Eventos tipados + envelope (tipo/versão fixados no construtor; RFC 3339 UTC; dinheiro em string)
+- [x] Hash de idempotência (JCS) validado contra vetores golden gerados por implementação independente (Python)
+- [x] Erros classificáveis (`errors.Is/As`, `ValidationError` por campo) + códigos de falha estáveis
+- [x] Guardas: teste AST "sem float" (exceto `platform/metrics/`) + limite de imports do domínio (stdlib + uuid + domain)
 
-### F2 — Persistência — pendente
+Interpretações registradas na F1 (para o ARCHITECTURE.md):
+- Identificadores externos restritos a `[A-Za-z0-9._:-]{1,128}` (deixa o JSON canônico sem escapes).
+- UUIDs aceitos em qualquer caixa, normalizados para minúsculas antes do hash; valores monetários sem normalização (só a forma canônica `0.00` é aceita).
+- `BET`/`LOSS` não aceitam referência; `WIN` aceita referência opcional a uma `BET` processada da mesma rodada (ausente → espera).
+- Uma transação é revertida com sucesso **no máximo uma vez**, qualquer que seja o tipo (`ALREADY_REVERSED`); `ROLLBACK` de `ROLLBACK` não é permitido.
+- `ROLLBACK` de `BET` credita; de `WIN`/`REFUND` debita (falta de saldo → `REVERSAL_INSUFFICIENT_FUNDS`).
+- Moedas suportadas: BRL, USD, EUR (todas com 2 casas).
+
+### F2 — Persistência — **PRÓXIMA**
 - [ ] Migrations goose (up/down) + `jungle migrate up|down|status`
 - [ ] Constraints, índices parciais, FK composta ledger→transação
 - [ ] Triggers: imutabilidade do ledger, terminal imutável, cadeia do ledger, saldo=último lançamento (DEFERRED)
@@ -140,7 +149,7 @@ Legenda: `[ ]` pendente · `[x]` feito · `[~]` parcial · **status** da fase no
 
 ## 5. Lições dos forks (checklist de regressão)
 
-- [ ] Índice de reversão **sem** `kind` (REFUND+ROLLBACK na mesma BET = rejeitado)
+- [~] Índice de reversão **sem** `kind` (regra de domínio feita na F1; índice no banco na F2)
 - [ ] Todo `SKIP LOCKED` dentro de transação com UPDATE de claim
 - [ ] Nunca I/O de rede com transação SQL aberta
 - [ ] `MessageGroupId = walletId`; claim da outbox por cabeça de partição; batch FIFO bloqueia grupo após falha
@@ -168,3 +177,4 @@ Observação: o Keycloak responde 503 (bootstrap) por alguns segundos depois do 
 |---|---|---|---|
 | 2026-10-01 | — | Pesquisa, arquitetura e estudo de 12 forks concluídos | Iniciar F0 |
 | 2026-10-01 | F0 | Fundação completa: compose isolado, Terraform provisionando Keycloak/MiniStack/Postgres, esqueleto Fx com health, edge Traefik, spikes executados | F1: domínio puro (Money primeiro) |
+| 2026-10-01 | F1 | Domínio puro completo (money, wallet, wagering, events) com testes unitários, fuzz, vetores golden e guardas arquiteturais; `go test -race` verde | F2: migrations goose + constraints/triggers + repositórios pgx |

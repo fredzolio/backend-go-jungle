@@ -1,0 +1,76 @@
+[
+  {
+    "name": "bet-challenge-example",
+    "input": {
+      "providerId": "provider-a",
+      "externalTransactionId": "transaction-123",
+      "playerId": "0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
+      "walletId": "0192f291-27dd-7d3f-8071-5f8685deef37",
+      "roundId": "round-987",
+      "gameId": "fortune-chimp",
+      "kind": "BET",
+      "money": {
+        "amount": "25.00",
+        "currency": "BRL"
+      }
+    },
+    "canonical": "{\"externalTransactionId\":\"transaction-123\",\"gameId\":\"fortune-chimp\",\"kind\":\"BET\",\"money\":{\"amount\":\"25.00\",\"currency\":\"BRL\"},\"playerId\":\"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1\",\"providerId\":\"provider-a\",\"roundId\":\"round-987\",\"walletId\":\"0192f291-27dd-7d3f-8071-5f8685deef37\"}",
+    "sha256": "629836932b79106b99523d06a1e7fa80689b0ea1e1c47aa3f0a5a2c87d0c4344"
+  },
+  {
+    "name": "refund-with-reference",
+    "input": {
+      "providerId": "provider-a",
+      "externalTransactionId": "transaction-124",
+      "playerId": "0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
+      "walletId": "0192f291-27dd-7d3f-8071-5f8685deef37",
+      "roundId": "round-987",
+      "gameId": "fortune-chimp",
+      "kind": "REFUND",
+      "money": {
+        "amount": "25.00",
+        "currency": "BRL"
+      },
+      "referenceExternalTransactionId": "transaction-123"
+    },
+    "canonical": "{\"externalTransactionId\":\"transaction-124\",\"gameId\":\"fortune-chimp\",\"kind\":\"REFUND\",\"money\":{\"amount\":\"25.00\",\"currency\":\"BRL\"},\"playerId\":\"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1\",\"providerId\":\"provider-a\",\"referenceExternalTransactionId\":\"transaction-123\",\"roundId\":\"round-987\",\"walletId\":\"0192f291-27dd-7d3f-8071-5f8685deef37\"}",
+    "sha256": "d47ad676d378f74510e611ad37b85a3c29e7bbbb3b987f6bfd65d67d28f68434"
+  },
+  {
+    "name": "loss-zero",
+    "input": {
+      "providerId": "provider-a",
+      "externalTransactionId": "transaction-125",
+      "playerId": "0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
+      "walletId": "0192f291-27dd-7d3f-8071-5f8685deef37",
+      "roundId": "round-987",
+      "gameId": "fortune-chimp",
+      "kind": "LOSS",
+      "money": {
+        "amount": "0.00",
+        "currency": "BRL"
+      }
+    },
+    "canonical": "{\"externalTransactionId\":\"transaction-125\",\"gameId\":\"fortune-chimp\",\"kind\":\"LOSS\",\"money\":{\"amount\":\"0.00\",\"currency\":\"BRL\"},\"playerId\":\"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1\",\"providerId\":\"provider-a\",\"roundId\":\"round-987\",\"walletId\":\"0192f291-27dd-7d3f-8071-5f8685deef37\"}",
+    "sha256": "15427696add589db2955cda28c4594e1122ee54c8b75cd48deeee01fb6870983"
+  },
+  {
+    "name": "win-other-provider",
+    "input": {
+      "providerId": "provider-b",
+      "externalTransactionId": "tx:1",
+      "playerId": "0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
+      "walletId": "0192f291-27dd-7d3f-8071-5f8685deef37",
+      "roundId": "round-987",
+      "gameId": "fortune-chimp",
+      "kind": "WIN",
+      "money": {
+        "amount": "100.50",
+        "currency": "BRL"
+      },
+      "referenceExternalTransactionId": "transaction-123"
+    },
+    "canonical": "{\"externalTransactionId\":\"tx:1\",\"gameId\":\"fortune-chimp\",\"kind\":\"WIN\",\"money\":{\"amount\":\"100.50\",\"currency\":\"BRL\"},\"playerId\":\"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1\",\"providerId\":\"provider-b\",\"referenceExternalTransactionId\":\"transaction-123\",\"roundId\":\"round-987\",\"walletId\":\"0192f291-27dd-7d3f-8071-5f8685deef37\"}",
+    "sha256": "40d9775b6aea64dd442add8b739693f45315683f0312d072c0563572f2353d15"
+  }
+]
