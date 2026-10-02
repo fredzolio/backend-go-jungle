@@ -125,12 +125,11 @@ elif ! docker image inspect "$IMAGE_REF" > /dev/null 2>&1; then
   log "pulling $IMAGE_REF"
   docker pull "$IMAGE_REF"
 fi
-if current_id=$(docker inspect -f '{{.Image}}' jungle-api-1-1 2> /dev/null); then
-  docker tag "$current_id" "$ROLLBACK_TAG"
+if current_id=$(docker inspect -f '{{.Image}}' jungle-api-1-1 2> /dev/null) && docker tag "$current_id" "$ROLLBACK_TAG" 2> /dev/null; then
   HAVE_ROLLBACK=1
   log "rollback anchor: $ROLLBACK_TAG = $current_id"
 else
-  log "no running api-1: first deploy, rollback unavailable"
+  log "WARNING: no usable running api-1 image: rollback unavailable for this deploy"
 fi
 
 # 3-5. Infra images are built locally; infra is converged without touching Caddy.
