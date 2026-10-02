@@ -211,6 +211,7 @@ Achado da F9: `pg_stat_activity` esconde `query`/`wait_event` de outros papéis 
 - [x] CD: imagem no GHCR com Trivy gate, SBOM, proveniência, attestation e cosign keyless; deploy via Tailscale WIF → sshd sem root (porta 2222, só tailnet) → forced command que exige commit da `main` + assinatura → rolling update, smoke e2e público, rollback automático (testado com imagem quebrada)
 - [x] Env do lab em SOPS/age (chave da VM + chave do cofre zoliolab); policy Tailscale (`tag:ci` → só `100.86.214.26:2222`) e identidade federada reproduzíveis por `deploy/lab/tailscale-bootstrap.sh`
 - Achados: o GitHub emite subject OIDC imutável para este repo (`repo:fredzolio@91195110/backend-go-jungle@1400476308:...`) — a identidade federada precisa dele; segredos de environment só chegam a workflow reutilizável com `secrets: inherit`; govulncheck v1.1.4 entra em panic com go1.27 (v1.8.0); `make load-test` montava `/secrets` read-only (k6 não gravava o resumo)
+- [x] Watchdog do lab (timer systemd de usuário): recupera sozinho a perda de estado do MiniStack (testado com `docker kill` no lab)
 - Detalhes: [docs/CICD.md](docs/CICD.md)
 
 ## 8. Estado final
