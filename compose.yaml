@@ -52,7 +52,7 @@ x-api-env: &api-env
 services:
   postgres:
     <<: *hardening
-    image: postgres:17.11-alpine
+    image: postgres:18.6-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
