@@ -27,7 +27,7 @@ type submitRequest struct {
 //	202 PENDING_REFERENCE (Location to follow it)
 //	422 REJECTED (business rule; body carries failureCode)
 func (h Handlers) submit(w http.ResponseWriter, r *http.Request) {
-	principal, _ := principalFrom(r.Context()) //nolint:errcheck // set by secured()
+	principal, _ := principalFrom(r.Context()) // set by secured()
 	if !principal.IsProvider() {
 		writeProblem(w, r, http.StatusForbidden, codeInsufficientScope, "only game-provider identities submit operations")
 		return
@@ -87,7 +87,7 @@ func (h Handlers) getTransaction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, h.Log, err)
 		return
 	}
-	if principal, _ := principalFrom(r.Context()); principal.IsProvider() && //nolint:errcheck // set by secured()
+	if principal, _ := principalFrom(r.Context()); principal.IsProvider() && // set by secured()
 		(snap.External == nil || snap.External.ProviderID != principal.ProviderID) {
 		writeError(w, r, h.Log, app.ErrTransactionNotFound)
 		return
@@ -98,7 +98,7 @@ func (h Handlers) getTransaction(w http.ResponseWriter, r *http.Request) {
 // getProviderTransaction: GET /providers/{providerId}/wagering/transactions/{externalTransactionId}.
 func (h Handlers) getProviderTransaction(w http.ResponseWriter, r *http.Request) {
 	providerID := r.PathValue("providerId")
-	if principal, _ := principalFrom(r.Context()); principal.IsProvider() && principal.ProviderID != providerID { //nolint:errcheck // set by secured()
+	if principal, _ := principalFrom(r.Context()); principal.IsProvider() && principal.ProviderID != providerID { // set by secured()
 		writeError(w, r, h.Log, app.ErrTransactionNotFound)
 		return
 	}

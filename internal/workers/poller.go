@@ -34,7 +34,7 @@ func (p Poller) Register(lc fx.Lifecycle) {
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			// The loop outlives the start hook, so it gets its own root context.
-			loopCtx, c := context.WithCancel(context.Background())
+			loopCtx, c := context.WithCancel(context.Background()) //nolint:gosec // G118 false positive: cancel is stored and called in OnStop
 			cancel = c
 			go p.loop(loopCtx, done)
 			p.Log.Info("worker started", slog.String("worker", p.Name))

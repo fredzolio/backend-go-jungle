@@ -31,7 +31,7 @@ type senderIdentity struct {
 
 // LoadSenders reads the provider => identity map written by Terraform.
 func LoadSenders(path string, trustedAccounts []string) (*Senders, error) {
-	raw, err := os.ReadFile(path) //nolint:gosec // path comes from trusted configuration
+	raw, err := os.ReadFile(path) // path comes from trusted configuration
 	if err != nil {
 		return nil, fmt.Errorf("read senders file: %w", err)
 	}

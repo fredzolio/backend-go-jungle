@@ -60,13 +60,13 @@ func NewHandler(rt Routes) http.Handler {
 
 func serveOpenAPI(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/yaml")
-	_, _ = w.Write(api.OpenAPI) //nolint:errcheck // client went away
+	_, _ = w.Write(api.OpenAPI) // client went away
 }
 
 // serveDocs renders the contract with Scalar (OAuth2 client-credentials flow).
 func serveDocs(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(`<!doctype html><html><head><title>Jungle Wallet API</title><meta charset="utf-8"/>` + //nolint:errcheck // client went away
+	_, _ = w.Write([]byte(`<!doctype html><html><head><title>Jungle Wallet API</title><meta charset="utf-8"/>` + // client went away
 		`<meta name="viewport" content="width=device-width, initial-scale=1"/></head><body>` +
 		`<script id="api-reference" data-url="/openapi.yaml"></script>` +
 		`<script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1"></script></body></html>`))

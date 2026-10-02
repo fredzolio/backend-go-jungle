@@ -139,7 +139,7 @@ type cursor struct {
 }
 
 func encodeCursor(walletID uuid.UUID, version int64) string {
-	raw, _ := json.Marshal(cursor{WalletID: walletID, Version: version}) //nolint:errcheck // infallible
+	raw, _ := json.Marshal(cursor{WalletID: walletID, Version: version}) // infallible
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 

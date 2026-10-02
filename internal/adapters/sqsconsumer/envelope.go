@@ -86,7 +86,7 @@ func parse(body string) (message, error) {
 	if err != nil {
 		return message{}, fmt.Errorf("%w: %w", errMalformed, err)
 	}
-	canonical, _ := json.Marshal(map[string]string{ //nolint:errcheck // map of strings cannot fail
+	canonical, _ := json.Marshal(map[string]string{ // map of strings cannot fail
 		"idempotencyKey": d.IdempotencyKey, "messageId": env.MessageID, "occurredAt": env.OccurredAt,
 		"payloadHash": req.PayloadHash(), "type": env.Type,
 	})

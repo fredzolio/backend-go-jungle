@@ -62,7 +62,7 @@ func provisioned(t *testing.T, rel string) string {
 func token(t *testing.T, id string) string {
 	t.Helper()
 	form := url.Values{"grant_type": {"client_credentials"}, "client_id": {id}, "client_secret": {clients(t)[id].Secret}}
-	req, _ := http.NewRequestWithContext(context.Background(), "POST", baseURL()+"/auth/realms/jungle/protocol/openid-connect/token", strings.NewReader(form.Encode()))
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL()+"/auth/realms/jungle/protocol/openid-connect/token", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {

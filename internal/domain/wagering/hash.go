@@ -39,7 +39,7 @@ func (r ExternalRequest) PayloadHash() string {
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	// Encoding a map of strings cannot fail; maps are emitted with sorted keys.
-	_ = enc.Encode(doc) //nolint:errcheck // infallible for map[string]any of strings
+	_ = enc.Encode(doc) // infallible for map[string]any of strings
 	sum := sha256.Sum256(bytes.TrimSuffix(buf.Bytes(), []byte("\n")))
 	return hex.EncodeToString(sum[:])
 }
