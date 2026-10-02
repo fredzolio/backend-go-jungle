@@ -14,12 +14,14 @@ set -Eeuo pipefail
 
 API=https://api.tailscale.com/api/v2
 REPO=fredzolio/backend-go-jungle
-SUBJECT="repo:$REPO:environment:lab"
 export VM_ADDR=100.86.214.26 SSH_PORT=2222
 APPLY=0
 [[ "${1:-}" == --apply ]] && APPLY=1
 [[ -n "${TS_API_KEY:-}" ]] || { echo "TS_API_KEY is not set" >&2; exit 1; }
 for tool in curl jq python3 diff gh; do command -v "$tool" > /dev/null || { echo "missing tool: $tool" >&2; exit 1; }; done
+# The repo uses GitHub's immutable OIDC subject (repo:<owner>@<id>/<repo>@<id>:...), so the
+# prefix is read from GitHub instead of being assumed.
+SUBJECT="$(gh api "repos/$REPO/actions/oidc/customization/sub" --jq .sub_claim_prefix):environment:lab"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

@@ -89,6 +89,7 @@ jobs:
           KNOWN_HOSTS: ${{ vars.LAB_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
+          [[ -n "$SSH_KEY" ]] || { echo "::error::LAB_SSH_PRIVATE_KEY is empty (environment lab secret not visible to this job)"; exit 1; }
           install -d -m 700 "$HOME/.ssh"
           umask 077
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/lab_deploy_key"
