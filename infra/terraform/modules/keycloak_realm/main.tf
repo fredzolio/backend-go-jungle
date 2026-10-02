@@ -6,6 +6,8 @@
 #   * Internal service (jungle-internal): wallet scopes; it has no provider_id claim.
 #   * Every token carries aud=jungle-api, which the API validates.
 #   * provider-c-shortlived: token lifespan of a few seconds, for expired-token tests.
+#   * demo_clients (optional): same roles, but with a known secret published in the README so
+#     evaluators can call the public lab; disabled when demo_client_secret is empty.
 terraform {
   required_providers {
     keycloak = { source = "keycloak/keycloak" }
@@ -25,7 +27,9 @@ locals {
   clients = merge(
     { for id, c in local.provider_clients : id => { scopes = local.wagering_scopes, provider_id = c.provider_id, lifespan = c.lifespan } },
     { (var.internal_client) = { scopes = local.wallet_scopes, provider_id = "", lifespan = "" } },
+    { for id, p in var.demo_clients : id => { scopes = p == "" ? local.wallet_scopes : local.wagering_scopes, provider_id = p, lifespan = "" } },
   )
+  secrets = { for id, _ in local.clients : id => contains(keys(var.demo_clients), id) ? var.demo_client_secret : random_password.client[id].result }
 }
 
 resource "keycloak_realm" "jungle" {
@@ -70,7 +74,7 @@ resource "keycloak_openid_client" "client" {
   name                         = each.key
   enabled                      = true
   access_type                  = "CONFIDENTIAL"
-  client_secret                = random_password.client[each.key].result
+  client_secret                = local.secrets[each.key]
   service_accounts_enabled     = true
   standard_flow_enabled        = false
   implicit_flow_enabled        = false

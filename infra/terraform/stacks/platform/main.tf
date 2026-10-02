@@ -3,8 +3,14 @@ module "postgres" {
 }
 
 module "keycloak" {
-  source         = "../../modules/keycloak_realm"
-  game_providers = var.game_providers
+  source             = "../../modules/keycloak_realm"
+  game_providers     = var.game_providers
+  demo_client_secret = var.demo_client_secret
+  demo_clients = var.demo_client_secret == "" ? {} : {
+    "demo-internal"   = ""
+    "demo-provider-1" = "demo-provider-1"
+    "demo-provider-2" = "demo-provider-2"
+  }
 }
 
 module "messaging" {

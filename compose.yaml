@@ -145,6 +145,8 @@ services:
       TF_VAR_postgres_superuser_password: ${POSTGRES_PASSWORD:-postgres-local}
       TF_VAR_keycloak_admin_password: ${KEYCLOAK_ADMIN_PASSWORD:-admin-local}
       TF_VAR_aws_root_secret_key: ${MINISTACK_ROOT_SECRET:-test}
+      # Evaluation clients with a published secret (README); set DEMO_CLIENT_SECRET= to disable.
+      TF_VAR_demo_client_secret: ${DEMO_CLIENT_SECRET-jungle-demo-local}
     volumes:
       - tfstate:/state
       - provisioned:/provisioned
