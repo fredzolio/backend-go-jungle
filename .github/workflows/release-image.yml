@@ -31,8 +31,6 @@ on:
         description: sha-<first 12 chars of the commit>
         value: ${{ jobs.image.outputs.tag }}
   workflow_dispatch: {} # manual runs never push
-  push: # TEMP-CD-TEST
-    branches: [cd/lab-deploy]
 
 permissions:
   contents: read
