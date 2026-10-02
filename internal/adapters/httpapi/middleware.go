@@ -33,7 +33,7 @@ type TokenVerifier interface {
 var correlationFormat = regexp.MustCompile(`^[A-Za-z0-9._:\-]{1,64}$`)
 
 func correlationID(ctx context.Context) string {
-	id, _ := ctx.Value(keyCorrelation).(string) //nolint:errcheck // absent => ""
+	id, _ := ctx.Value(keyCorrelation).(string) // absent => ""
 	return id
 }
 

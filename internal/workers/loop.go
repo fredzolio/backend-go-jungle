@@ -26,7 +26,7 @@ func (l Loop) Register(lc fx.Lifecycle) {
 	)
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			ctx, c := context.WithCancel(context.Background())
+			ctx, c := context.WithCancel(context.Background()) //nolint:gosec // G118 false positive: cancel is stored and called in OnStop
 			cancel = c
 			for range max(l.Copies, 1) {
 				wg.Go(func() { l.Run(ctx) })

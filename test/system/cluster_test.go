@@ -169,7 +169,7 @@ func (c *cluster) waitReady(p *process) {
 	c.t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		res, err := http.Get("http://" + p.addr + "/health/ready") //nolint:noctx // test
+		res, err := http.Get("http://" + p.addr + "/health/ready") // test
 		if err == nil {
 			res.Body.Close()
 			if res.StatusCode == http.StatusOK {

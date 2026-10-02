@@ -49,7 +49,7 @@ func writeProblem(w http.ResponseWriter, r *http.Request, status int, code, deta
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(problem{ //nolint:errcheck // client went away
+	_ = json.NewEncoder(w).Encode(problem{ // client went away
 		Type: "https://jungle.lab.fredzol.io/problems/" + code, Title: http.StatusText(status), Status: status,
 		Code: code, Detail: detail, CorrelationID: correlationID(r.Context()), Errors: issues,
 	})
@@ -97,7 +97,7 @@ func validationIssues(err error) []fieldIssue {
 	var walk func(error)
 	walk = func(e error) {
 		var verr *wagering.ValidationError
-		if errors.As(e, &verr) && verr == e {
+		if errors.As(e, &verr) && verr == e { //nolint:errorlint // exact match on purpose: wrapped and joined errors are walked via Unwrap below
 			out = append(out, fieldIssue{Field: verr.Field, Reason: verr.Reason})
 			return
 		}
@@ -121,5 +121,5 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body) //nolint:errcheck // client went away
+	_ = json.NewEncoder(w).Encode(body) // client went away
 }

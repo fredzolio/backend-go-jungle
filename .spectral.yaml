@@ -1,0 +1,3 @@
+# Minimal OpenAPI ruleset: Spectral's recommended rules, applied to api/openapi.yaml.
+extends: ["spectral:oas"]
+# Style rules (operationId, descriptions, contact) surface as warnings only; CI fails on errors.

@@ -1,0 +1,4 @@
+ignored:
+  # Dockerfile (distroless static:nonroot): the nonroot name resolves inside the image
+  # (uid 65532); hadolint cannot see the base image's /etc/passwd.
+  - DL3066

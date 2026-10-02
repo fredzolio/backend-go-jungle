@@ -79,5 +79,5 @@ func write(w http.ResponseWriter, code int, body report) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(body) //nolint:errcheck // client went away; nothing to recover
+	_ = json.NewEncoder(w).Encode(body) // client went away; nothing to recover
 }
