@@ -115,7 +115,7 @@ test-e2e: ## End-to-end tests against the running stack (make up first): real Ke
 	JUNGLE_BASE_URL=$(E2E_BASE_URL) JUNGLE_PROVISIONED_DIR=$$tmp go test -tags=e2e -count=1 -v ./test/e2e/...
 
 GOLANGCI_LINT := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
-GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.1.4
+GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.8.0
 VET_TAG_SETS := "" integration system e2e system,faultinject
 
 lint: ## golangci-lint (pinned; built with the repo toolchain, all build tags via .golangci.yml)
