@@ -356,6 +356,11 @@ O consumer mantém todas as validações de domínio.
   - Achado: o MiniStack exige `sns:PublishBatch` explicitamente (a AWS usa `sns:Publish`), por isso
     a policy lista os dois.
   - Plano B: LocalStack 4.9.2 fixado.
+- **CI/CD** ([docs/CICD.md](docs/CICD.md)): os mesmos gates em PR e na `main`; imagem no GHCR com
+  SBOM, proveniência e assinatura cosign; deploy no lab pela tailnet (OIDC, sem segredo de longa
+  duração), num sshd sem root com forced command que só aceita commits da `main` com imagem
+  assinada; rolling update das 3 APIs, smoke e2e e rollback automático. Migrations seguem
+  expand/contract porque o rollout convive com a versão anterior.
 
 ## Limitações e trabalho não concluído
 
