@@ -1,0 +1,231 @@
+# Quality + security gates. The single required status check is `ci-ok`.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GOTOOLCHAIN: go1.27.1 # keep in sync with the Makefile
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      go: ${{ steps.f.outputs.go }}
+      infra: ${{ steps.f.outputs.infra }}
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with: { egress-policy: audit }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: f
+        with:
+          filters: |
+            go:
+              - 'cmd/**'
+              - 'internal/**'
+              - 'test/**'
+              - 'migrations/**'
+              - 'api/**'
+              - 'go.mod'
+              - 'go.sum'
+              - 'Dockerfile'
+              - 'compose.yaml'
+              - 'infra/**'
+              - 'Makefile'
+              - '.golangci.yml'
+              - '.github/workflows/ci.yml'
+            infra:
+              - 'infra/**'
+              - '**/Dockerfile*'
+              - 'compose.yaml'
+              - 'api/**'
+              - '.github/**'
+              - '.hadolint.yaml'
+              - '.spectral.yaml'
+
+  lint:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with: { egress-policy: audit }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - name: gofmt
+        run: |
+          out=$(gofmt -l cmd internal test)
+          if [ -n "$out" ]; then echo "Unformatted files:"; echo "$out"; gofmt -d cmd internal test; exit 1; fi
+      - name: go vet (every build-tag set)
+        run: |
+          for t in "" integration system e2e system,faultinject; do
+            echo "::group::go vet -tags=$t"
+            go vet -tags="$t" ./...
+            echo "::endgroup::"
+          done
+      - name: go mod tidy -diff
+        run: go mod tidy -diff
+      - name: go mod verify
+        run: go mod verify
+      # goinstall builds golangci-lint with the repo's Go toolchain; the prebuilt
+      # release binary is built with an older Go and cannot lint go1.27 code.
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.14.0
+          install-mode: goinstall
+
+  unit:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with: { egress-policy: audit }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - run: go test -race -shuffle=on -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Coverage summary
+        run: |
+          total=$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}')
+          echo "### Unit test coverage: ${total}" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 14
+
+  integration:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with: { egress-policy: audit }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - run: make test-integration
+
+  system:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with: { egress-policy: audit }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      # The harness keeps child-process stderr in memory and reports it through
+      # test output, so the verbose go test log is the artifact.
+      - run: make test-system 2>&1 | tee system.log
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: system-logs
+          path: system.log
+          retention-days: 7
+
+  e2e:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with: { egress-policy: audit }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - name: Start the full stack (localhost defaults, no .env.lab)
+        run: docker compose up --build -d --wait
+      - run: make test-e2e
+      - name: Dump stack state
+        if: failure()
+        run: |
+          docker compose ps > compose-ps.txt 2>&1 || true
+          docker compose logs --no-color > compose-logs.txt 2>&1 || true
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-compose-logs
+          path: compose-*.txt
+          retention-days: 7
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  infra-lint:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.infra == 'true'
+    uses: ./.github/workflows/ci-infra.yml
+
+  security-quick:
+    needs: changes
+    permissions:
+      contents: read
+      pull-requests: read
+      security-events: write
+    uses: ./.github/workflows/ci-security.yml
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with: { egress-policy: audit }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: never
+
+  # --- CD jobs (image, deploy) are added by the CD integration ---
+
+  ci-ok:
+    if: always()
+    needs: [changes, lint, unit, integration, system, e2e, infra-lint, security-quick, dependency-review]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every needed job to be success or skipped
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$RESULTS" | jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' >/dev/null; then
+            echo "::error::at least one required job failed or was cancelled"; exit 1
+          fi
