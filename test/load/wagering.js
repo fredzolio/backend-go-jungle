@@ -23,6 +23,12 @@ export const options = {
   scenarios: {
     bets: { executor: 'constant-vus', vus: Number(__ENV.VUS || 20), duration: __ENV.DURATION || '60s' },
   },
+  // Regression gates (k6 exits non-zero when crossed); override per environment.
+  thresholds: {
+    http_req_failed: [`rate<${__ENV.MAX_FAILED_RATE || 0.01}`],
+    'http_req_duration{name:submit}': [`p(99)<${__ENV.MAX_P99_MS || 1500}`],
+    checks: [`rate>${__ENV.MIN_CHECK_RATE || 0.99}`],
+  },
   summaryTrendStats: ['avg', 'p(50)', 'p(95)', 'p(99)', 'max'],
 };
 

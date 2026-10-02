@@ -87,7 +87,7 @@ func TestApplication_starts_serves_and_stops_without_leaks(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	for _, url := range []string{"http://" + cfg.HTTP.Addr + "/health/ready", "http://" + cfg.MetricsAddr + "/metrics"} {
-		res, err := http.Get(url) //nolint:noctx // test
+		res, err := http.Get(url) // test
 		if err != nil || res.StatusCode != http.StatusOK {
 			t.Fatalf("GET %s: %v %v", url, res, err)
 		}

@@ -1,0 +1,69 @@
+# golangci-lint v2 configuration. Run: make lint (pinned v2.14.0, builds with the repo toolchain).
+version: "2"
+
+run:
+  timeout: 10m
+  # Lint every file, including those behind build tags.
+  build-tags: [integration, system, e2e, faultinject]
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - gosec
+    - bodyclose
+    - errorlint
+    - sqlclosecheck
+    - rowserrcheck
+    - noctx
+    - misspell
+    - unconvert
+    - nolintlint
+    - copyloopvar
+    - usestdlibvars
+    - gocritic
+    - revive
+  settings:
+    govet:
+      enable-all: true
+      disable: [fieldalignment, shadow]
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    gocritic:
+      enabled-tags: [diagnostic, performance]
+      # Domain value objects are passed by value on purpose (immutability); pointers would be churn.
+      disabled-checks: [hugeParam, rangeValCopy]
+    revive:
+      rules:
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: var-declaration
+        - name: receiver-naming
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: context-as-argument
+        - name: dot-imports
+        - name: blank-imports
+          exclude: ["**/cmd/**"]
+  exclusions:
+    presets: [comments, std-error-handling, common-false-positives]
+    rules:
+      # Tests may use throwaway helpers, loose permissions and unchecked cleanups.
+      - path: _test\.go
+        linters: [gosec, errcheck, noctx, unused-parameter]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes: [github.com/fredzolio/backend-go-jungle]

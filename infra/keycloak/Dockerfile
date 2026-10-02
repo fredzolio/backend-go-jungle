@@ -11,5 +11,7 @@ RUN /opt/keycloak/bin/kc.sh build
 
 FROM quay.io/keycloak/keycloak:26.8.0
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
+# Same non-root user the base image already runs as (made explicit for scanners).
+USER 1000
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 CMD ["start", "--optimized"]

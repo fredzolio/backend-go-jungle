@@ -1,0 +1,18 @@
+# Accepted Trivy findings. Every entry is scoped to paths and carries a justification.
+misconfigurations:
+  - id: DS-0002
+    paths:
+      - infra/terraform/edge.Dockerfile
+      - infra/terraform/runner.Dockerfile
+    statement: >-
+      Lab-only provisioning images (never deployed as a service). They run as root on purpose:
+      the runner writes Terraform state into named volumes and the edge image edits the host
+      Caddy configuration.
+  - id: AWS-0095
+    paths: [infra/terraform/modules/messaging/main.tf]
+    statement: >-
+      Targets MiniStack, a local AWS emulator inside the compose network (no real AWS account);
+      KMS encryption is not available/meaningful there.
+  - id: AWS-0096
+    paths: [infra/terraform/modules/messaging/main.tf]
+    statement: Same as AWS-0095 (SQS queues on the MiniStack emulator).
