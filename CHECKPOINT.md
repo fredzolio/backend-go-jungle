@@ -55,7 +55,7 @@ Tudo pertence ao projeto Compose **`jungle`** e não toca em nada fora dele.
 | D6 | Edge do stack = **Traefik v3** (LB entre `api-1..3`, health check, rate limit), sem docker socket | Seguro e suficiente |
 | D7 | Go **1.27.1**; pgx/v5 + SQL explícito; goose (migrations); `net/http` ServeMux; Uber Fx; slog | Alinhado ao desafio e aos melhores forks |
 | D8 | Dinheiro em `int64` (centavos) + `CHAR(3)`; parser estrito `^(0\|[1-9]\d*)\.\d{2}$` | Sem normalização antes do hash |
-| D9 | Credenciais demo dos providers **não** publicadas; entregues por fora | Segurança do ambiente público |
+| D9 | ~~Credenciais demo não publicadas~~ → clients de avaliação (`demo-internal`, `demo-provider-1/2`) com segredo público no README; os clients reais seguem com segredos gerados. Desligáveis com `DEMO_CLIENT_SECRET=` | O desafio pede identidades de teste e instruções para os fluxos autenticados; quem avalia precisa testar o lab sem pedir segredos |
 | D10 | Autorização de remetente no SQS: policy do broker (só `jungle-producer-<id>` envia) + validação de domínio no consumer + mapa `senders.json` (SenderId→provider). No MiniStack o `SenderId` é o account id, então o mapa aceita o account como curinga (documentado como limitação; em AWS real usa o `AIDA…` do usuário) | Resultado do spike F0 |
 | D11 | Secrets gerados pelo Terraform (`random_password`) e entregues em volume `jungle_provisioned` (arquivos 0400, uid 65532), lidos via variáveis `*_FILE` | Nada de segredo em env/git |
 

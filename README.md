@@ -17,6 +17,7 @@ FIFO. Tem:
 - **Carga:** [docs/LOADTEST.md](docs/LOADTEST.md)
 - **CI/CD:** [docs/CICD.md](docs/CICD.md) (gates, imagem assinada, deploy no lab via Tailscale)
 - **Diário de implementação:** [CHECKPOINT.md](CHECKPOINT.md)
+- **Testar no ambiente público:** [seção abaixo](#testar-no-ambiente-público) (credenciais de avaliação incluídas)
 
 ## Pré-requisitos
 
@@ -125,6 +126,66 @@ make load-test                 # k6
 ```
 
 Detalhes, matriz de cenários e simulação de falhas: [docs/TESTING.md](docs/TESTING.md).
+
+## Testar no ambiente público
+
+`https://jungle.lab.fredzol.io` roda a versão atual da `main`, com 3 instâncias da API atrás do edge.
+O contrato fica em [`/docs`](https://jungle.lab.fredzol.io/docs). Para autenticar, use os clients de
+avaliação abaixo. O segredo é público de propósito: estes clients existem só para testar o lab.
+
+| client_id | client_secret | Papel |
+|---|---|---|
+| `demo-internal` | `jungle-lab-demo-2026` | serviço interno: abre e lê carteiras, ledger, reconciliação |
+| `demo-provider-1` | `jungle-lab-demo-2026` | provider `demo-provider-1`: envia e consulta as próprias transações |
+| `demo-provider-2` | `jungle-lab-demo-2026` | provider `demo-provider-2`: para testar o isolamento entre providers |
+
+Roteiro completo (bash, `curl`, `jq` e `uuidgen`), incluindo o teste obrigatório de duas apostas
+simultâneas de 80.00 numa carteira de 100.00:
+
+```bash
+BASE=https://jungle.lab.fredzol.io
+SECRET=jungle-lab-demo-2026
+token() { curl -s -X POST "$BASE/auth/realms/jungle/protocol/openid-connect/token" \
+  -d grant_type=client_credentials -d client_id="$1" -d client_secret="$SECRET" | jq -r .access_token; }
+INTERNAL=$(token demo-internal); P1=$(token demo-provider-1); P2=$(token demo-provider-2)
+RUN=$(date +%s); PLAYER=$(uuidgen | tr 'A-Z' 'a-z'); T=$(mktemp -d)   # IDs novos a cada execução
+
+# carteira com 100.00 BRL (cliente interno)
+WID=$(curl -s -X POST "$BASE/wallets" -H "Authorization: Bearer $INTERNAL" -H 'Content-Type: application/json' \
+  -d "{\"playerId\":\"$PLAYER\",\"initialBalance\":{\"amount\":\"100.00\",\"currency\":\"BRL\"}}" | jq -r .id)
+
+bet() { # <token> <providerId> <externalTransactionId> <amount>
+  curl -s -X POST "$BASE/wagering/transactions" -H "Authorization: Bearer $1" \
+    -H 'Content-Type: application/json' -H "Idempotency-Key: $2:$3" \
+    -d "{\"providerId\":\"$2\",\"externalTransactionId\":\"$3\",\"playerId\":\"$PLAYER\",\"walletId\":\"$WID\",
+         \"roundId\":\"round-$RUN\",\"gameId\":\"fortune-chimp\",\"kind\":\"BET\",\"money\":{\"amount\":\"$4\",\"currency\":\"BRL\"}}"
+}
+
+# duas apostas de 80.00 ao mesmo tempo -> uma PROCESSED, outra REJECTED/INSUFFICIENT_FUNDS
+bet "$P1" demo-provider-1 "bet-a-$RUN" 80.00 > "$T/a" & bet "$P1" demo-provider-1 "bet-b-$RUN" 80.00 > "$T/b" & wait
+jq -c . "$T/a" "$T/b"
+
+# reenvio: mesma resposta, idempotentReplay=true, saldo inalterado
+bet "$P1" demo-provider-1 "bet-a-$RUN" 80.00 | jq -c .
+
+# saldo 20.00, ledger com o crédito inicial e um único débito, reconciliação consistente
+curl -s "$BASE/wallets/$WID" -H "Authorization: Bearer $INTERNAL" | jq -c .
+curl -s "$BASE/wallets/$WID/ledger?limit=50" -H "Authorization: Bearer $INTERNAL" | jq -c '.items[] | {direction, money, balanceAfter}'
+curl -s -X POST "$BASE/wallets/$WID/reconciliation" -H "Authorization: Bearer $INTERNAL" | jq -c .
+
+# autorização: 404 (provider não enxerga transação de outro), 403 PROVIDER_MISMATCH, 403 (escopo), 401
+curl -s -o /dev/null -w '%{http_code}\n' "$BASE/providers/demo-provider-1/wagering/transactions/bet-a-$RUN" -H "Authorization: Bearer $P2"
+bet "$P2" demo-provider-1 "x-$RUN" 1.00 | jq -r .code
+curl -s -o /dev/null -w '%{http_code}\n' "$BASE/wallets/$WID" -H "Authorization: Bearer $P1"
+curl -s -o /dev/null -w '%{http_code}\n' "$BASE/wallets/$WID"
+rm -rf "$T"
+```
+
+`WIN`, `LOSS`, `REFUND` e `ROLLBACK` usam o mesmo endpoint (veja `/docs`). O lab expõe só HTTP:
+a fila SQS (MiniStack), o console do Keycloak e as métricas ficam privados. O caminho por fila
+pode ser testado localmente com `docker compose up --build` e `make test-e2e`
+(`test/e2e/sqs_e2e_test.go`). Localmente existem os mesmos clients de avaliação, com o segredo
+`jungle-demo-local` (`DEMO_CLIENT_SECRET` no `.env.example`; vazio desativa os clients).
 
 ## Ambiente público (VM do autor)
 
