@@ -205,6 +205,14 @@ Achado da F9: `pg_stat_activity` esconde `query`/`wait_event` de outros papéis 
 - [x] Incidente: MiniStack reiniciou durante a carga (fila de auditoria acumulando eventos, limite de 256 MB) e voltou sem estado → retenção de 1 h na auditoria, limite 768 MB, `make recover-broker`; nenhum dado financeiro perdido (outbox retém os eventos)
 - [x] Arquivos de teste de sistema divididos para respeitar o teto de 250 linhas
 
+### F12 — CI/CD — **CONCLUÍDA** (2026-10-02)
+- [x] Repositório público (gitleaks no histórico inteiro: limpo); secret scanning + push protection, Dependabot, reporte privado de vulnerabilidades; ruleset da `main` (sem force-push/deleção, `ci-ok` obrigatório em PR, bypass admin)
+- [x] CI: lint (golangci-lint v2, vet com todas as tags, tidy), unit `-race`, integração, sistema, e2e com o stack inteiro no runner, infra-lint, govulncheck/gitleaks/Trivy, dependency-review, CodeQL, Scorecard, nightly (flakes + k6 com thresholds + CVEs), Dependabot, release-please
+- [x] CD: imagem no GHCR com Trivy gate, SBOM, proveniência, attestation e cosign keyless; deploy via Tailscale WIF → sshd sem root (porta 2222, só tailnet) → forced command que exige commit da `main` + assinatura → rolling update, smoke e2e público, rollback automático (testado com imagem quebrada)
+- [x] Env do lab em SOPS/age (chave da VM + chave do cofre zoliolab); policy Tailscale (`tag:ci` → só `100.86.214.26:2222`) e identidade federada reproduzíveis por `deploy/lab/tailscale-bootstrap.sh`
+- Achados: o GitHub emite subject OIDC imutável para este repo (`repo:fredzolio@91195110/backend-go-jungle@1400476308:...`) — a identidade federada precisa dele; segredos de environment só chegam a workflow reutilizável com `secrets: inherit`; govulncheck v1.1.4 entra em panic com go1.27 (v1.8.0); `make load-test` montava `/secrets` read-only (k6 não gravava o resumo)
+- Detalhes: [docs/CICD.md](docs/CICD.md)
+
 ## 8. Estado final
 
 Todas as fases concluídas. Ambiente no ar em **https://jungle.lab.fredzol.io** (modo lab, `.env.lab`).
@@ -251,6 +259,7 @@ Observação: o Keycloak responde 503 (bootstrap) por alguns segundos depois do 
 | 2026-10-01 | — | Pesquisa, arquitetura e estudo de 12 forks concluídos | Iniciar F0 |
 | 2026-10-01 | F0 | Fundação completa: compose isolado, Terraform provisionando Keycloak/MiniStack/Postgres, esqueleto Fx com health, edge Traefik, spikes executados | F1: domínio puro (Money primeiro) |
 | 2026-10-01 | F1 | Domínio puro completo (money, wallet, wagering, events) com testes unitários, fuzz, vetores golden e guardas arquiteturais; `go test -race` verde | F2: migrations goose + constraints/triggers + repositórios pgx |
+| 2026-10-02 | F12 | CI/CD: gates em PR/main, imagem assinada no GHCR, deploy no lab via Tailscale OIDC + forced command, rolling + smoke + rollback; repo público | — |
 | 2026-10-01 | F11 | README/ARCHITECTURE/TESTING/LOADTEST; carga 220 tx/s p99 ~275 ms sem erros; otimizações da outbox; recuperação do broker | Entregue |
 | 2026-10-01 | F10 | https://jungle.lab.fredzol.io no ar (Terraform edge-lab, superfície mínima, e2e pelo HTTPS); incidente do reload do Caddy 2.6.2 corrigido e documentado | F11: README, ARCHITECTURE, ADRs, TESTING, carga |
 | 2026-10-01 | F9 | Os 8 cenários obrigatórios com processos independentes (-race, faultinject), contenção comprovada por pg_stat_activity | F10: exposição em jungle.lab.fredzol.io |

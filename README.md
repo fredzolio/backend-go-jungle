@@ -1,5 +1,8 @@
 # Jungle Wallet — processamento distribuído de apostas em Go
 
+[![ci](https://github.com/fredzolio/backend-go-jungle/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fredzolio/backend-go-jungle/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/fredzolio/backend-go-jungle/badge)](https://scorecard.dev/viewer/?uri=github.com/fredzolio/backend-go-jungle)
+
 Solução do [desafio backend da Jungle Gaming](docs/CHALLENGE.md). É um serviço em Go 1.27.1 com
 Uber Fx que movimenta carteiras a partir de operações de provedores, recebidas por HTTP e por SQS
 FIFO. Tem:
@@ -12,6 +15,7 @@ FIFO. Tem:
 - **Contrato HTTP:** [api/openapi.yaml](api/openapi.yaml), também em `/docs`
 - **Testes e cenários obrigatórios:** [docs/TESTING.md](docs/TESTING.md)
 - **Carga:** [docs/LOADTEST.md](docs/LOADTEST.md)
+- **CI/CD:** [docs/CICD.md](docs/CICD.md) (gates, imagem assinada, deploy no lab via Tailscale)
 - **Diário de implementação:** [CHECKPOINT.md](CHECKPOINT.md)
 
 ## Pré-requisitos
@@ -135,6 +139,10 @@ make lab-smoke     # suíte e2e pelo HTTPS público
 ```
 
 Só ficam públicos a API, `/docs` e os endpoints de token, JWKS e discovery do realm `jungle`.
+
+Depois do setup inicial, quem atualiza o lab é o pipeline: cada push verde na `main` faz rolling
+deploy com smoke e rollback automático ([docs/CICD.md](docs/CICD.md)). O checkout usado pelo deploy
+é `/home/zolio/deploy/backend-go-jungle`, com o env decifrado do SOPS (`deploy/lab/lab.enc.env`).
 
 ## Estrutura
 
