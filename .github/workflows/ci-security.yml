@@ -57,6 +57,7 @@ jobs:
           scanners: vuln,misconfig
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+          trivyignores: .trivyignore.yaml
           format: sarif
           output: trivy.sarif
           exit-code: "0"
@@ -76,5 +77,6 @@ jobs:
           scanners: vuln,misconfig
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+          trivyignores: .trivyignore.yaml
           format: table
           exit-code: "1"
