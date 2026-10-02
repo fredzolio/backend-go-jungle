@@ -107,6 +107,12 @@ antes de o health check do Traefik (2 s) tirá-la do balanceamento.
 | Reinstalar o canal de deploy (sshd, forced command, cosign) | `make lab-deploy-bootstrap` |
 | Editar variáveis do lab | `make lab-env-edit` (SOPS) |
 
+O stack do lab pertence ao checkout de deploy (`/home/zolio/deploy/backend-go-jungle`). Os alvos
+`lab-*` já operam nele, mesmo quando chamados de outro checkout. `lab-rollback` e
+`lab-deploy-status` passam pelo mesmo forced command do CI. Já `make up`/`down` num checkout de
+desenvolvimento na VM assumem o mesmo projeto compose (`jungle`) e recriam Postgres e edge com
+outros caminhos de bind mount. Na VM, use esses alvos só quando quiser mexer no lab.
+
 ### Segredos e configuração
 
 - **Env do lab**: [deploy/lab/lab.enc.env](../deploy/lab/lab.enc.env), cifrado com SOPS + age para
