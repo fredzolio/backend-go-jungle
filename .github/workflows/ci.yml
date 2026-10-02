@@ -245,6 +245,8 @@ jobs:
     with:
       image_ref: ${{ needs.image.outputs.ref }}
       git_sha: ${{ github.sha }}
+    # Environment (`lab`) secrets only reach a called workflow when the caller inherits.
+    secrets: inherit
 
   ci-ok:
     if: always()
