@@ -59,6 +59,7 @@ jobs:
               - '.github/**'
               - '.hadolint.yaml'
               - '.spectral.yaml'
+              - 'deploy/**'
 
   lint:
     needs: changes
@@ -212,11 +213,42 @@ jobs:
           fail-on-severity: high
           comment-summary-in-pr: never
 
-  # --- CD jobs (image, deploy) are added by the CD integration ---
+  # ---------- CD ----------
+  # PRs: build + Trivy gate only. main: push, SBOM/provenance, attest and sign — only after
+  # every gate passed (skipped is fine), so `main` and sha-* tags never point at a red commit.
+  image:
+    needs: [changes, lint, unit, integration, system, e2e, infra-lint, security-quick]
+    if: >-
+      always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+      && (github.event_name != 'pull_request' || needs.changes.outputs.go == 'true')
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      security-events: write
+    uses: ./.github/workflows/release-image.yml
+    with:
+      push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+  # Kill switch: repository variable LAB_DEPLOY_ENABLED must be 'true'.
+  deploy-lab:
+    needs: image
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && vars.LAB_DEPLOY_ENABLED == 'true' && needs.image.result == 'success'
+    permissions:
+      contents: read
+      id-token: write
+      packages: read
+    uses: ./.github/workflows/deploy-lab.yml
+    with:
+      image_ref: ${{ needs.image.outputs.ref }}
+      git_sha: ${{ github.sha }}
 
   ci-ok:
     if: always()
-    needs: [changes, lint, unit, integration, system, e2e, infra-lint, security-quick, dependency-review]
+    needs: [changes, lint, unit, integration, system, e2e, infra-lint, security-quick, dependency-review, image]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

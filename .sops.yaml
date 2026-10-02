@@ -1,0 +1,7 @@
+# SOPS rules. Recipients: the lab VM (decrypts at deploy time; key never leaves the VM)
+# and the owner's workstation key (same key as the zoliolab vault, for editing).
+creation_rules:
+  - path_regex: deploy/lab/.*\.enc\.env$
+    age: >-
+      age1u7lhgs334uafpevh83svyamzenhrteccx3s93hxhtf8zv0h9xensxtv7mt,
+      age158z862wt444wzlhk6wgl86z8q98aesdsdpr89nfzm3lgewpehg3qqmufvh

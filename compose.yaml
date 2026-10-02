@@ -11,7 +11,7 @@ x-hardening: &hardening
 
 x-api: &api
   <<: *hardening
-  image: jungle/api:local
+  image: ${JUNGLE_API_IMAGE:-jungle/api:local}
   pull_policy: never
   restart: unless-stopped
   read_only: true
@@ -153,7 +153,7 @@ services:
   # Applies versioned migrations as the schema owner, then exits. APIs start after it.
   migrate:
     <<: *hardening
-    image: jungle/api:local
+    image: ${JUNGLE_API_IMAGE:-jungle/api:local}
     build:
       context: .
     command: ["migrate", "up"]

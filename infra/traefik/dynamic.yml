@@ -11,7 +11,7 @@ http:
       entryPoints: [web]
       rule: "PathPrefix(`/`)"
       service: jungle-api
-      middlewares: [rate-limit]
+      middlewares: [rate-limit, retry]
       priority: 1
 
     # Private entrypoint.
@@ -25,6 +25,12 @@ http:
       service: api@internal
 
   middlewares:
+    # Retries only connection-level failures (backend refused/reset before any response
+    # byte), which is what a rolling restart produces; HTTP 5xx answers are NOT retried.
+    retry:
+      retry:
+        attempts: 3
+        initialInterval: 100ms
     rate-limit:
       rateLimit:
         average: 200

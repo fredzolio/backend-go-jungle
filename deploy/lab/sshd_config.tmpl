@@ -1,0 +1,31 @@
+# Dedicated, NON-ROOT OpenSSH daemon for CI deploys (rendered by bootstrap.sh; do not edit
+# the rendered copy). Tailscale SSH intercepts tailnet port 22, hence the separate port.
+ListenAddress @LISTEN_ADDR@:@LISTEN_PORT@
+HostKey @HOME@/.config/jungle-deploy/ssh_host_ed25519_key
+AuthorizedKeysFile @HOME@/.config/jungle-deploy/authorized_keys
+PidFile @HOME@/.local/state/jungle-deploy/sshd.pid
+
+UsePAM no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+PermitRootLogin no
+PermitEmptyPasswords no
+AllowUsers @USER@
+MaxAuthTries 2
+MaxSessions 2
+LoginGraceTime 20
+LogLevel VERBOSE
+
+PermitTTY no
+AllowTcpForwarding no
+AllowStreamLocalForwarding no
+AllowAgentForwarding no
+X11Forwarding no
+PermitTunnel no
+PermitUserEnvironment no
+GatewayPorts no
+PrintMotd no
+
+ForceCommand @HOME@/.local/libexec/jungle-deploy/ssh-entry

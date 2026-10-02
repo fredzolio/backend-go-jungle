@@ -1,0 +1,140 @@
+# Reusable: deploy a signed image to the lab VM over Tailscale + a restricted SSH forced command.
+#
+# The VM never trusts this workflow blindly: its forced command re-verifies that the
+# commit is an ancestor of origin/main and that the image carries a keyless cosign
+# signature issued to a workflow of this repository on refs/heads/main.
+#
+# Required caller permissions: contents: read, id-token: write, packages: read.
+# Environment `lab` provides: secret LAB_SSH_PRIVATE_KEY; vars LAB_SSH_HOST, LAB_SSH_PORT,
+# LAB_SSH_USER, LAB_SSH_KNOWN_HOSTS, LAB_PUBLIC_URL, TS_OAUTH_CLIENT_ID, TS_AUDIENCE.
+name: deploy-lab
+
+on:
+  workflow_call:
+    inputs:
+      image_ref:
+        description: Immutable image reference (ghcr.io/...@sha256:<digest>)
+        type: string
+        required: true
+      git_sha:
+        description: Full commit SHA being deployed
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      git_sha:
+        description: Full 40-char commit SHA on main (its image must already be published)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-lab
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/fredzolio/backend-go-jungle
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: lab
+      url: ${{ vars.LAB_PUBLIC_URL }}
+    permissions:
+      contents: read
+      id-token: write
+      packages: read
+    env:
+      GIT_SHA: ${{ inputs.git_sha }}
+      LAB_PUBLIC_URL: ${{ vars.LAB_PUBLIC_URL }}
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Resolve image reference
+        id: image
+        env:
+          INPUT_IMAGE_REF: ${{ inputs.image_ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "git_sha must be 40 lowercase hex chars" >&2; exit 1; }
+          ref="$INPUT_IMAGE_REF"
+          if [[ -z "$ref" ]]; then
+            printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin >/dev/null
+            digest=$(docker buildx imagetools inspect "${IMAGE}:sha-${GIT_SHA:0:12}" --format '{{json .Manifest}}' | jq -r .digest)
+            ref="${IMAGE}@${digest}"
+          fi
+          [[ "$ref" =~ ^ghcr\.io/fredzolio/backend-go-jungle@sha256:[0-9a-f]{64}$ ]] || { echo "unexpected image ref: $ref" >&2; exit 1; }
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          echo "Deploying ${ref} (commit ${GIT_SHA})"
+
+      - name: Connect to tailnet
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
+        with:
+          oauth-client-id: ${{ vars.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ vars.TS_AUDIENCE }}
+          tags: tag:ci
+          ping: ${{ vars.LAB_SSH_HOST }}
+
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.LAB_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ vars.LAB_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          umask 077
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/lab_deploy_key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/lab_known_hosts"
+
+      - name: Deploy over SSH (forced command)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF: ${{ steps.image.outputs.ref }}
+          SSH_PORT: ${{ vars.LAB_SSH_PORT }}
+          SSH_TARGET: ${{ vars.LAB_SSH_USER }}@${{ vars.LAB_SSH_HOST }}
+        run: |
+          set -euo pipefail
+          # The token travels on stdin only; the VM uses it for an ephemeral GHCR login.
+          printf '%s' "$GH_TOKEN" | ssh -p "$SSH_PORT" \
+            -i "$HOME/.ssh/lab_deploy_key" -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/lab_known_hosts" -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes -o ServerAliveInterval=15 \
+            "$SSH_TARGET" deploy "$GIT_SHA" "$REF" | tee deploy.log
+          {
+            echo '### Lab deploy'
+            echo '```'
+            tail -n 60 deploy.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Black-box checks (public internet)
+        run: |
+          set -euo pipefail
+          base="${LAB_PUBLIC_URL%/}"
+          check() { # <expected> <path>
+            code=$(curl -s -o /dev/null -m 15 -w '%{http_code}' "${base}$2")
+            echo "GET $2 -> $code (want $1)"
+            [[ "$code" == "$1" ]]
+          }
+          check_not() { # <forbidden> <path>
+            code=$(curl -s -o /dev/null -m 15 -w '%{http_code}' "${base}$2")
+            echo "GET $2 -> $code (must not be $1)"
+            [[ "$code" != "$1" ]]
+          }
+          check 200 /health/ready
+          check 200 /docs
+          check 200 /openapi.yaml
+          check_not 200 /auth/admin/
+          check 401 /wallets/00000000-0000-0000-0000-000000000000
+
+      - name: Remove key material
+        if: always()
+        run: rm -f "$HOME/.ssh/lab_deploy_key" "$HOME/.ssh/lab_known_hosts" deploy.log
