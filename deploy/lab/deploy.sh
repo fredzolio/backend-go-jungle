@@ -133,8 +133,16 @@ else
 fi
 
 # 3-5. Infra images are built locally; infra is converged without touching Caddy.
-log "building infra images"
-compose build keycloak provisioner
+# A rebuild yields a new image ID even from cache, which would needlessly recreate Keycloak
+# on every deploy: rebuild only when the sources changed (or the images are missing).
+if [[ -n "$PREV_SHA" ]] && git cat-file -e "$PREV_SHA^{commit}" 2> /dev/null &&
+  docker image inspect jungle/keycloak:local jungle/provisioner:local > /dev/null 2>&1 &&
+  git diff --quiet "$PREV_SHA" "$GIT_SHA" -- infra/keycloak infra/terraform; then
+  log "infra images unchanged since $PREV_SHA: not rebuilding"
+else
+  log "building infra images"
+  compose build keycloak provisioner
+fi
 log "converging infra (postgres keycloak ministack edge)"
 compose up -d --no-build --wait postgres keycloak ministack edge
 log "provisioning (idempotent Terraform; also heals a MiniStack that lost state)"
