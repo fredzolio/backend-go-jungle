@@ -76,6 +76,29 @@ lab-unexpose: ## Remove the public route (Terraform destroy of edge-lab)
 lab-smoke: ## Run the e2e suite through the public HTTPS URL
 	@$(MAKE) --no-print-directory test-e2e E2E_BASE_URL=https://jungle.lab.fredzol.io
 
+# ---------- Lab deploy (CD) ----------
+.PHONY: lab-deploy-bootstrap lab-deploy lab-deploy-status lab-rollback lab-env-edit lab-env-decrypt
+lab-deploy-bootstrap: ## Install/refresh the CI deploy channel (non-root sshd, forced command, cosign) on this VM
+	deploy/lab/bootstrap.sh
+
+lab-deploy: ## Manual rolling deploy on this VM (IMAGE=<ref> SHA=<git sha>); a ref without registry host is local
+	@test -n "$(IMAGE)" -a -n "$(SHA)" || { echo "usage: make lab-deploy IMAGE=<ref> SHA=<git sha>"; exit 2; }
+	deploy/lab/deploy.sh "$(IMAGE)" "$(SHA)"
+
+lab-deploy-status: ## Show current/previous release and the running api images
+	@for f in current previous; do echo "== $$f"; cat $$HOME/.local/state/jungle-deploy/$$f 2>/dev/null || echo "(none)"; done
+	@docker ps --filter name=jungle-api --format '{{.Names}} {{.Image}} {{.Status}}'
+
+lab-rollback: ## Redeploy the previous release (same routine as deploy)
+	@. $$HOME/.local/state/jungle-deploy/previous 2>/dev/null || { echo "no previous release recorded"; exit 1; }; \
+	deploy/lab/deploy.sh "$$image" "$$sha"
+
+lab-env-edit: ## Edit the encrypted lab environment (sops)
+	$(HOME)/.local/bin/sops deploy/lab/lab.enc.env
+
+lab-env-decrypt: ## Write .env.lab from deploy/lab/lab.enc.env (mode 600)
+	@umask 077; $(HOME)/.local/bin/sops decrypt --input-type dotenv --output-type dotenv deploy/lab/lab.enc.env > .env.lab && echo ".env.lab written"
+
 # ---------- Load ----------
 .PHONY: load-test
 load-test: ## k6 load test through the edge (stack up; VUS, DURATION, WALLETS overridable)

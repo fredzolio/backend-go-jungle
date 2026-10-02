@@ -1,0 +1,12 @@
+[Unit]
+Description=Jungle lab deploy SSH daemon (non-root, forced command only)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/sbin/sshd -D -e -f %h/.config/jungle-deploy/sshd_config
+# The tailscale IP may not exist yet at boot: keep retrying until it can be bound.
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
