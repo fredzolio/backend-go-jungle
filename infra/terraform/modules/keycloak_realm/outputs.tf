@@ -6,7 +6,7 @@ output "clients" {
   description = "client_id => { client_secret, provider_id }"
   value = {
     for id, c in local.clients : id => {
-      client_secret = random_password.client[id].result
+      client_secret = local.secrets[id]
       provider_id   = c.provider_id
     }
   }

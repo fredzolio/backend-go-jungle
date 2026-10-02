@@ -33,3 +33,15 @@ variable "shortlived_lifespan_seconds" {
   type    = string
   default = "5"
 }
+
+variable "demo_clients" {
+  description = "Evaluation clients with a published secret: client_id => provider_id (\"\" = internal/wallet scopes)."
+  type        = map(string)
+  default     = {}
+}
+
+variable "demo_client_secret" {
+  description = "Shared, intentionally public secret of every demo client."
+  type        = string
+  default     = ""
+}

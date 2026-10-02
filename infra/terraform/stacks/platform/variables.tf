@@ -61,3 +61,9 @@ variable "provisioned_dir" {
   type        = string
   default     = "/provisioned"
 }
+
+variable "demo_client_secret" {
+  description = "Public secret of the evaluation clients (demo-internal, demo-provider-1/2); empty disables them."
+  type        = string
+  default     = ""
+}
