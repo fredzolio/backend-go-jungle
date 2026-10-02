@@ -1,6 +1,6 @@
 # Runner of the edge-lab stack: Terraform plus the Caddy CLI pinned to the VM's
 # Caddy version (2.6.2), used only to validate the resulting Caddyfile.
-FROM caddy:2.6.2-alpine AS caddy
+FROM caddy:2.11.4-alpine AS caddy
 
 FROM hashicorp/terraform:1.16.4
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
