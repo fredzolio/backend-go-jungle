@@ -51,6 +51,9 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # edge.Dockerfile pins the Caddy CLI to the VM's Caddy (validates the Caddyfile it will load).
+      - dependency-name: caddy
   - package-ecosystem: docker-compose
     directory: "/"
     schedule:

@@ -66,6 +66,11 @@ install -m 0644 "$HERE/jungle-deploy-sshd.service" "$UNIT_DIR/jungle-deploy-sshd
 systemctl --user daemon-reload
 systemctl --user enable jungle-deploy-sshd.service
 systemctl --user restart jungle-deploy-sshd.service
+log "enabling lab watchdog timer"
+install -m 0644 "$HERE/jungle-lab-watchdog.service" "$HERE/jungle-lab-watchdog.timer" "$UNIT_DIR/"
+systemctl --user daemon-reload
+systemctl --user enable --now jungle-lab-watchdog.timer
 sleep 1
 systemctl --user --no-pager --lines=5 status jungle-deploy-sshd.service || true
+systemctl --user --no-pager list-timers jungle-lab-watchdog.timer || true
 ss -ltnH "sport = :$LISTEN_PORT" || true

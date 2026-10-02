@@ -1,0 +1,8 @@
+[Unit]
+Description=Jungle lab watchdog (heals MiniStack state loss)
+
+[Service]
+Type=oneshot
+# Runs from the deploy checkout, so it is updated by every deploy.
+ExecStart=%h/deploy/backend-go-jungle/deploy/lab/watchdog.sh
+TimeoutStartSec=10min
