@@ -68,21 +68,21 @@ jobs:
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      - id: out
+        run: |
+          tag="sha-${GITHUB_SHA:0:12}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=sha,format=short,prefix=sha-
+            type=raw,value=${{ steps.out.outputs.tag }}
             type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-
-      - id: out
-        run: |
-          tag="sha-${GITHUB_SHA:0:12}"
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
       # Build once into the local daemon so the exact bits are scanned before any push.
       - name: Build (local)
@@ -96,7 +96,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Trivy scan (HIGH,CRITICAL)
+      # SARIF for the Security tab (never fails), then the gating table scan (fails on findings).
+      - name: Trivy scan (SARIF)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}:scan
@@ -104,7 +105,17 @@ jobs:
           output: trivy.sarif
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+          exit-code: "0"
+
+      - name: Trivy gate (HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:scan
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
           exit-code: "1"
+          skip-setup-trivy: true
 
       - name: Upload Trivy SARIF
         if: ${{ !cancelled() && hashFiles('trivy.sarif') != '' }}
