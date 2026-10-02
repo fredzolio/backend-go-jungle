@@ -87,7 +87,7 @@ load-test: ## k6 load test through the edge (stack up; VUS, DURATION, WALLETS ov
 	cp $$tmp/summary.json $(CURDIR)/test/load/last-summary.json
 
 # ---------- Go ----------
-.PHONY: build fmt vet test test-race test-integration test-e2e test-system
+.PHONY: build fmt vet test test-race test-integration test-e2e test-system lint vuln ci-local
 build: ## Compile all packages
 	go build ./...
 
@@ -113,6 +113,22 @@ test-e2e: ## End-to-end tests against the running stack (make up first): real Ke
 	@tmp=$$(mktemp -d -p $(CURDIR) .e2e-XXXXXX) && trap 'rm -rf $$tmp' EXIT && \
 	docker run --rm -v jungle_provisioned:/p:ro -v $$tmp:/out alpine sh -c 'cp -r /p/. /out/ && chown -R $(shell id -u):$(shell id -g) /out' && \
 	JUNGLE_BASE_URL=$(E2E_BASE_URL) JUNGLE_PROVISIONED_DIR=$$tmp go test -tags=e2e -count=1 -v ./test/e2e/...
+
+GOLANGCI_LINT := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.1.4
+VET_TAG_SETS := "" integration system e2e system,faultinject
+
+lint: ## golangci-lint (pinned; built with the repo toolchain, all build tags via .golangci.yml)
+	go run $(GOLANGCI_LINT) run
+
+vuln: ## govulncheck against the Go vulnerability database
+	go run $(GOVULNCHECK) ./...
+
+ci-local: ## Fast local mirror of CI: gofmt check, vet (all tags), lint, unit tests with -race
+	@test -z "$$(gofmt -l cmd internal test)" || { gofmt -d cmd internal test; exit 1; }
+	@for t in $(VET_TAG_SETS); do echo "go vet -tags=$$t"; go vet -tags="$$t" ./... || exit 1; done
+	$(MAKE) --no-print-directory lint
+	$(MAKE) --no-print-directory test-race
 
 # ---------- Terraform ----------
 TF_IMAGE := hashicorp/terraform:1.16.4
