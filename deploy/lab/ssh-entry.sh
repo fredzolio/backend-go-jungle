@@ -22,7 +22,8 @@ export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
-client_ip=${SSH_CONNECTION%% *}
+client_ip=${SSH_CONNECTION:-local}
+client_ip=${client_ip%% *}
 cmd=${SSH_ORIGINAL_COMMAND:-}
 audit() { printf '%s client=%s result=%s command=%q\n' "$(date -u +%FT%TZ)" "${client_ip:-local}" "$1" "$cmd" >> "$AUDIT_LOG"; }
 reject() { audit "rejected: $1"; echo "rejected: $1" >&2; exit 2; }

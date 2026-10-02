@@ -81,17 +81,21 @@ lab-smoke: ## Run the e2e suite through the public HTTPS URL
 lab-deploy-bootstrap: ## Install/refresh the CI deploy channel (non-root sshd, forced command, cosign) on this VM
 	deploy/lab/bootstrap.sh
 
-lab-deploy: ## Manual rolling deploy on this VM (IMAGE=<ref> SHA=<git sha>); a ref without registry host is local
+# The lab stack is owned by the deploy checkout: running deploy.sh from another checkout would
+# recreate postgres/edge with different bind-mount paths. rollback/status use the same forced
+# command as CI (lock, main ancestry, cosign verification, checkout of the release commit).
+LAB_DEPLOY_CHECKOUT ?= /home/zolio/deploy/backend-go-jungle
+LAB_SSH_ENTRY := $(HOME)/.local/libexec/jungle-deploy/ssh-entry
+
+lab-deploy: ## Manual rolling deploy from the deploy checkout (IMAGE=<ref> SHA=<git sha>); a ref without registry host is local
 	@test -n "$(IMAGE)" -a -n "$(SHA)" || { echo "usage: make lab-deploy IMAGE=<ref> SHA=<git sha>"; exit 2; }
-	deploy/lab/deploy.sh "$(IMAGE)" "$(SHA)"
+	$(LAB_DEPLOY_CHECKOUT)/deploy/lab/deploy.sh "$(IMAGE)" "$(SHA)"
 
 lab-deploy-status: ## Show current/previous release and the running api images
-	@for f in current previous; do echo "== $$f"; cat $$HOME/.local/state/jungle-deploy/$$f 2>/dev/null || echo "(none)"; done
-	@docker ps --filter name=jungle-api --format '{{.Names}} {{.Image}} {{.Status}}'
+	@SSH_ORIGINAL_COMMAND=status $(LAB_SSH_ENTRY)
 
-lab-rollback: ## Redeploy the previous release (same routine as deploy)
-	@. $$HOME/.local/state/jungle-deploy/previous 2>/dev/null || { echo "no previous release recorded"; exit 1; }; \
-	deploy/lab/deploy.sh "$$image" "$$sha"
+lab-rollback: ## Redeploy the previous release (signature + main checks, deploy checkout)
+	SSH_ORIGINAL_COMMAND=rollback $(LAB_SSH_ENTRY) < /dev/null
 
 lab-env-edit: ## Edit the encrypted lab environment (sops)
 	$(HOME)/.local/bin/sops deploy/lab/lab.enc.env
