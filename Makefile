@@ -104,7 +104,7 @@ lab-env-decrypt: ## Write .env.lab from deploy/lab/lab.enc.env (mode 600)
 load-test: ## k6 load test through the edge (stack up; VUS, DURATION, WALLETS overridable)
 	@tmp=$$(mktemp -d -p $(CURDIR) .e2e-XXXXXX) && trap 'rm -rf $$tmp' EXIT && \
 	docker run --rm -v jungle_provisioned:/p:ro -v $$tmp:/out alpine sh -c 'cp /p/keycloak/clients.json /out/ && chmod 644 /out/clients.json && chmod 777 /out' && \
-	docker run --rm --network jungle_net -v $$tmp:/secrets:ro -v $(CURDIR)/test/load:/scripts:ro \
+	docker run --rm --network jungle_net -v $$tmp:/secrets -v $(CURDIR)/test/load:/scripts:ro \
 	  -e VUS=$(or $(VUS),20) -e DURATION=$(or $(DURATION),60s) -e WALLETS=$(or $(WALLETS),50) \
 	  grafana/k6:2.3.0 run --summary-export=/secrets/summary.json /scripts/wagering.js && \
 	cp $$tmp/summary.json $(CURDIR)/test/load/last-summary.json

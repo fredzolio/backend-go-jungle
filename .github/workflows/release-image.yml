@@ -117,6 +117,7 @@ jobs:
 
       - name: Upload Trivy SARIF
         if: ${{ !cancelled() && hashFiles('trivy.sarif') != '' }}
+        continue-on-error: true # Dependabot/fork PRs get a read-only token; the gate above still applies
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: trivy.sarif

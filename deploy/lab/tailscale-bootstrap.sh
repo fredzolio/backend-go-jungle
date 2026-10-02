@@ -1,23 +1,25 @@
 #!/usr/bin/env bash
-# One-off Tailscale setup for the CI deploy path (run by a human/orchestrator, not by CI).
+# One-off Tailscale setup for the CI deploy path (run by a human, never by CI).
 #
 #   TS_API_KEY=<short-lived API access token> deploy/lab/tailscale-bootstrap.sh [--apply]
 #
-# Without --apply: fetch the tailnet policy, compute the change and print a unified diff.
-# With --apply: validate, POST the policy (If-Match ETag), create a federated identity for
-# GitHub Actions (env `lab`) and store TS_OAUTH_CLIENT_ID / TS_AUDIENCE as env variables.
-# NOTE: the policy is fetched as JSON, so HuJSON comments of the current policy are lost
-# on write; review the diff first.
+# Idempotent. Without --apply it only prints the policy diff and what would be created.
+#   1. Policy (HuJSON, edited textually so comments survive): tagOwners tag:ci; the default
+#      allow-all grant is narrowed to members (+ tag:homelab) so CI tags do not inherit it;
+#      tag:ci may only reach the deploy sshd (VM_ADDR tcp:SSH_PORT); a policy test pins that.
+#   2. Federated identity (GitHub OIDC, env `lab`, tag:ci, scope auth_keys) — no secret is
+#      stored in GitHub; TS_OAUTH_CLIENT_ID / TS_AUDIENCE become env `lab` variables.
+# Aborts if the policy does not have the expected shape (e.g. allow-all line not found).
 set -Eeuo pipefail
 
 API=https://api.tailscale.com/api/v2
 REPO=fredzolio/backend-go-jungle
-VM_ADDR=100.86.214.26
-SSH_PORT=2222
+SUBJECT="repo:$REPO:environment:lab"
+export VM_ADDR=100.86.214.26 SSH_PORT=2222
 APPLY=0
 [[ "${1:-}" == --apply ]] && APPLY=1
 [[ -n "${TS_API_KEY:-}" ]] || { echo "TS_API_KEY is not set" >&2; exit 1; }
-for tool in curl jq diff; do command -v "$tool" > /dev/null || { echo "missing tool: $tool" >&2; exit 1; }; done
+for tool in curl jq python3 diff gh; do command -v "$tool" > /dev/null || { echo "missing tool: $tool" >&2; exit 1; }; done
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -27,7 +29,7 @@ trap 'rm -rf "$work"' EXIT
 api() {
   local method=$1 path=$2 out=$3 code
   shift 3
-  code=$(printf 'header = "Authorization: Bearer %s"\n' "$TS_API_KEY" |
+  code=$(printf 'user = "%s:"\n' "$TS_API_KEY" |
     curl -sS -K - -X "$method" -o "$out" -w '%{http_code}' "$@" "$API$path")
   if [[ ! "$code" =~ ^2 ]]; then
     echo "Tailscale API $method $path failed with HTTP $code:" >&2
@@ -36,53 +38,76 @@ api() {
   fi
 }
 
-echo "Fetching current policy"
-api GET /tailnet/-/acl "$work/current.json" -H 'Accept: application/json' -D "$work/headers"
+echo "== policy"
+api GET /tailnet/-/acl "$work/current.hujson" -H 'Accept: application/hujson' -D "$work/headers"
 etag=$(tr -d '\r' < "$work/headers" | sed -n 's/^[Ee][Tt]ag: *//p' | head -n1)
 [[ -n "$etag" ]] || { echo "no ETag in policy response" >&2; exit 1; }
 
-# shellcheck disable=SC2016 # jq program, not shell
-jq -S --arg dst "$VM_ADDR:$SSH_PORT" --arg vm "$VM_ADDR" '
-  def narrow: .src |= map(if . == "*" then "autogroup:member" else . end);
-  .tagOwners["tag:ci"] = ["autogroup:admin"]
-  | .acls = ((.acls // []) | map(narrow))
-  | (if has("grants") then .grants |= map(narrow) else . end)
-  | .acls |= (if any(.[]; .src == ["tag:ci"] and .dst == [$dst]) then .
-              else . + [{action: "accept", src: ["tag:ci"], dst: [$dst]}] end)
-  | .tests = ((.tests // []) | if any(.[]; .src == "tag:ci") then .
-              else . + [{src: "tag:ci", accept: [$dst], deny: [($vm + ":22"), ($vm + ":443"), ($vm + ":5432")]}] end)
-' "$work/current.json" > "$work/new.json"
-jq -S . "$work/current.json" > "$work/current.sorted.json"
+python3 - "$work/current.hujson" "$work/new.hujson" << 'EOF'
+import os, sys
+src, dst = sys.argv[1], sys.argv[2]
+vm, port = os.environ["VM_ADDR"], os.environ["SSH_PORT"]
+s = open(src).read()
 
-echo "Policy diff (current -> new):"
-diff -u "$work/current.sorted.json" "$work/new.json" || true
-if cmp -s "$work/current.sorted.json" "$work/new.json"; then
-  echo "(policy already up to date)"
+def once(old, new, what):
+    global s
+    if s.count(old) != 1:
+        sys.exit(f"policy shape not recognised ({what}); edit it by hand")
+    s = s.replace(old, new)
+
+if '"tag:ci"' not in s:
+    once('"tagOwners": {', '"tagOwners": {\n\t\t// GitHub Actions runners (' + "fredzolio/backend-go-jungle"
+         + ', env lab) via OIDC federated identity.\n\t\t"tag:ci": ["autogroup:admin"],', "tagOwners")
+if '"src": ["tag:ci"]' not in s:
+    once('{"src": ["*"], "dst": ["*"], "ip": ["*"]},',
+         '// Members (and homelab tags) keep unrestricted access; CI tags do NOT inherit it.\n'
+         '\t\t{"src": ["autogroup:member", "tag:homelab"], "dst": ["*"], "ip": ["*"]},\n\n'
+         '\t\t// CI deploy: only the restricted deploy sshd (forced command) on zoliolab-server.\n'
+         f'\t\t{{"src": ["tag:ci"], "dst": ["{vm}"], "ip": ["tcp:{port}"]}},', "default allow-all grant")
+if '"src":    "tag:ci"' not in s:
+    test = ('\t"tests": [\n\t\t{\n\t\t\t"src":    "tag:ci",\n'
+            f'\t\t\t"accept": ["{vm}:{port}"],\n'
+            f'\t\t\t"deny":   ["{vm}:22", "{vm}:443", "{vm}:15432"],\n\t\t}},\n\t],\n')
+    once("\t// Test access rules every time they're saved.\n",
+         "\t// Test access rules every time they're saved.\n" + test, "tests anchor")
+open(dst, "w").write(s)
+EOF
+
+if cmp -s "$work/current.hujson" "$work/new.hujson"; then
+  echo "policy already up to date"
+  policy_changed=0
+else
+  diff -u "$work/current.hujson" "$work/new.hujson" || true
+  policy_changed=1
 fi
 
+echo "== federated identity ($SUBJECT)"
+# all=true: without it only the caller's own keys are listed (federated identities are not).
+api GET '/tailnet/-/keys?all=true' "$work/keys.json"
+existing=$(jq -r --arg s "$SUBJECT" \
+  '[.keys[]? | select(.keyType == "federated" and .subject == $s) | .id][0] // empty' "$work/keys.json")
+[[ -n "$existing" ]] && echo "already exists: $existing"
+
 if ((APPLY == 0)); then
-  echo "Dry run only. Re-run with --apply to push the policy and create the federated identity."
+  echo "Dry run only. Re-run with --apply."
   exit 0
 fi
 
-echo "Validating new policy"
-api POST /tailnet/-/acl/validate "$work/validate.out" -H 'Content-Type: application/json' --data-binary @"$work/new.json"
-echo "Applying new policy"
-api POST /tailnet/-/acl "$work/apply.out" -H 'Content-Type: application/json' -H "If-Match: $etag" --data-binary @"$work/new.json"
+if ((policy_changed)); then
+  api POST /tailnet/-/acl/validate "$work/validate.out" -H 'Content-Type: application/hujson' --data-binary @"$work/new.hujson"
+  jq -e 'length == 0' "$work/validate.out" > /dev/null || { cat "$work/validate.out" >&2; exit 1; }
+  api POST /tailnet/-/acl "$work/apply.out" -H 'Content-Type: application/hujson' -H "If-Match: $etag" --data-binary @"$work/new.hujson"
+  echo "policy applied"
+fi
 
-echo "Creating federated identity"
-jq -n --arg subject "repo:$REPO:environment:lab" '{
-  keyType: "federated",
-  description: "GitHub Actions fredzolio/backend-go-jungle env lab",
-  scopes: ["auth_keys"],
-  tags: ["tag:ci"],
-  issuer: "https://token.actions.githubusercontent.com",
-  subject: $subject}' > "$work/key-req.json"
-api POST /tailnet/-/keys "$work/key.json" -H 'Content-Type: application/json' --data-binary @"$work/key-req.json"
-id=$(jq -er '.id' "$work/key.json")
-audience=$(jq -er '.audience' "$work/key.json")
-echo "federated identity id=$id audience=$audience"
-
-gh variable set TS_OAUTH_CLIENT_ID --env lab --repo "$REPO" --body "$id"
-gh variable set TS_AUDIENCE --env lab --repo "$REPO" --body "$audience"
-echo "Set TS_OAUTH_CLIENT_ID and TS_AUDIENCE on GitHub environment lab."
+if [[ -z "$existing" ]]; then
+  jq -n --arg subject "$SUBJECT" '{keyType: "federated", description: "GHA backend-go-jungle env lab",
+    scopes: ["auth_keys"], tags: ["tag:ci"], issuer: "https://token.actions.githubusercontent.com",
+    subject: $subject}' > "$work/key-req.json"
+  api POST /tailnet/-/keys "$work/key.json" -H 'Content-Type: application/json' --data-binary @"$work/key-req.json"
+  existing=$(jq -er .id "$work/key.json")
+fi
+api GET "/tailnet/-/keys/$existing" "$work/key.json"
+gh variable set TS_OAUTH_CLIENT_ID --env lab --repo "$REPO" --body "$existing"
+gh variable set TS_AUDIENCE --env lab --repo "$REPO" --body "$(jq -er .audience "$work/key.json")"
+echo "TS_OAUTH_CLIENT_ID / TS_AUDIENCE set on GitHub environment lab"

@@ -133,7 +133,7 @@ jobs:
           check 200 /docs
           check 200 /openapi.yaml
           check_not 200 /auth/admin/
-          check 401 /v1/wallets/00000000-0000-0000-0000-000000000000
+          check 401 /wallets/00000000-0000-0000-0000-000000000000
 
       - name: Remove key material
         if: always()
