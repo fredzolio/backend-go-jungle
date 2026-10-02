@@ -2,7 +2,6 @@
 name: nightly
 
 on:
-  pull_request: # TEMP: validate on branch
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
