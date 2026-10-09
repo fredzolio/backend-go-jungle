@@ -104,7 +104,7 @@ services:
 
   ministack:
     <<: *hardening
-    image: ministackorg/ministack:1.5.19
+    image: ministackorg/ministack:1.5.22
     restart: unless-stopped
     environment:
       AUTH: "true"
