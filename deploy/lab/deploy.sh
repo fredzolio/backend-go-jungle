@@ -19,7 +19,7 @@ STATE_DIR=${JUNGLE_STATE_DIR:-$HOME/.local/state/jungle-deploy}
 EDGE_URL=http://127.0.0.1:18080
 TRAEFIK_API=http://127.0.0.1:18090/api/http/services/jungle-api@file
 ROLLBACK_TAG=jungle/api:rollback
-SMOKE_IMAGE=golang:1.27.1
+SMOKE_IMAGE=golang:1.27.2
 export PATH="$HOME/.local/bin:$PATH" SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/sops/age/keys.txt}
 
 cd "$ROOT"
