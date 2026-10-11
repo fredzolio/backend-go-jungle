@@ -5,7 +5,7 @@ reais (testcontainers) e o e2e usa o stack completo com o Keycloak real.
 
 | Suíte | Build tag | Comando | Pré-requisito | O que cobre |
 |---|---|---|---|---|
-| Unitários | — | `make test` / `make test-race` | Go 1.27.1 | domínio (Money + fuzz, Wallet, máquina de estados, regras), hash golden, logger, grafo Fx, guardas de arquitetura |
+| Unitários | — | `make test` / `make test-race` | Go 1.27.2 | domínio (Money + fuzz, Wallet, máquina de estados, regras), hash golden, logger, grafo Fx, guardas de arquitetura |
 | Integração | `integration` | `make test-integration` | Docker | adapters × Postgres/MiniStack reais, casos de uso, HTTP com JWT real, consumer, relay, ciclo de vida do Fx |
 | Sistema | `system` | `make test-system` | Docker + gcc (`-race`) | binário real (`-race`, `-tags faultinject`) como **processos independentes**, morte em pontos exatos |
 | E2E | `e2e` | `make up && make test-e2e` | stack no ar | tokens do Keycloak real, SQS com IAM aplicado (`AUTH=true`), eventos na fila assinante, pelo edge |

@@ -3,7 +3,7 @@ SHELL := /bin/bash
 # The VM lab uses .env.lab (created by `make lab-init`); a plain checkout uses defaults/.env.
 ENV_FILE ?= $(if $(wildcard .env.lab),.env.lab,)
 COMPOSE ?= docker compose $(if $(ENV_FILE),--env-file $(ENV_FILE),)
-export GOTOOLCHAIN ?= go1.27.1
+export GOTOOLCHAIN ?= go1.27.2
 
 .DEFAULT_GOAL := help
 

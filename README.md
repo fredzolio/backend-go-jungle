@@ -3,7 +3,7 @@
 [![ci](https://github.com/fredzolio/backend-go-jungle/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fredzolio/backend-go-jungle/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/fredzolio/backend-go-jungle/badge)](https://scorecard.dev/viewer/?uri=github.com/fredzolio/backend-go-jungle)
 
-Solução do [desafio backend da Jungle Gaming](https://github.com/junglegaming/backend-challenge-go). É um serviço em Go 1.27.1 com
+Solução do [desafio backend da Jungle Gaming](https://github.com/junglegaming/backend-challenge-go). É um serviço em Go 1.27.2 com
 Uber Fx que movimenta carteiras a partir de operações de provedores, recebidas por HTTP e por SQS
 FIFO. Tem:
 - idempotência persistente e ledger append-only;
@@ -21,7 +21,7 @@ FIFO. Tem:
 ## Pré-requisitos
 
 - Docker com Compose v2 (é tudo o que precisa para rodar; o Terraform roda em container).
-- Para testes: Go 1.27.1 (`GOTOOLCHAIN=go1.27.1` baixa sozinho), Docker; `gcc` para `make test-system` (`-race`).
+- Para testes: Go 1.27.2 (`GOTOOLCHAIN=go1.27.2` baixa sozinho), Docker; `gcc` para `make test-system` (`-race`).
 
 ## Subir
 

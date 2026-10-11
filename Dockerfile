@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
-# Go version is pinned here and in go.mod (go 1.27.1).
-FROM golang:1.27.1-alpine3.24 AS build
+# Go version is pinned here and in go.mod (go 1.27.2).
+FROM golang:1.27.2-alpine3.24 AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local
 COPY go.mod go.sum ./

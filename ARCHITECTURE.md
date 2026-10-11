@@ -1,6 +1,6 @@
 # Arquitetura
 
-Serviço único em Go 1.27.1, com Uber Fx, que move carteiras a partir de operações de provedores
+Serviço único em Go 1.27.2, com Uber Fx, que move carteiras a partir de operações de provedores
 recebidas por HTTP e por SQS FIFO. As garantias financeiras vivem no PostgreSQL, os eventos saem por
 uma outbox transacional para SNS FIFO e a autenticação é OAuth 2.0 (client credentials) no Keycloak.
 
