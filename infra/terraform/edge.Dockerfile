@@ -2,7 +2,7 @@
 # Caddy version (2.6.2), used only to validate the resulting Caddyfile.
 FROM caddy:2.6.2-alpine AS caddy
 
-FROM hashicorp/terraform:1.16.4
+FROM hashicorp/terraform:1.16.5
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 ENV TF_IN_AUTOMATION=1 TF_INPUT=0 TF_PLUGIN_CACHE_DIR=/opt/terraform/plugin-cache
 RUN mkdir -p "$TF_PLUGIN_CACHE_DIR"

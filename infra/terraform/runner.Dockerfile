@@ -1,7 +1,7 @@
 # Terraform runner used by the `provisioner` compose service.
 # Providers are downloaded at image build time (pinned by .terraform.lock.hcl),
 # so `docker compose up` provisions offline and fast.
-FROM hashicorp/terraform:1.16.4
+FROM hashicorp/terraform:1.16.5
 ENV TF_IN_AUTOMATION=1 \
     TF_INPUT=0 \
     TF_PLUGIN_CACHE_DIR=/opt/terraform/plugin-cache
