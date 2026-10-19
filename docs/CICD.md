@@ -97,11 +97,13 @@ antes de o health check do Traefik (2 s) tirá-la do balanceamento.
 
 ### Watchdog
 
-O MiniStack guarda filas, tópico e IAM em memória. Se o container morre sem parada graciosa, volta
-sem estado, e as APIs passam a responder readiness DOWN no check `sqs`. Um timer do systemd
-(usuário, a cada minuto, [watchdog.sh](../deploy/lab/watchdog.sh)) cobre esse caso. Depois de 3
-falhas seguidas de readiness com erro de `sqs` nos logs das APIs, ele faz o mesmo que
-`make recover-broker`: sobe o MiniStack, reaplica o Terraform e reinicia as APIs. Ele não age em
+O MiniStack guarda filas, tópico e IAM em memória. Se o container morre sem parada graciosa (ou a
+VM reinicia), ele volta sem estado, e as APIs passam a responder readiness DOWN no check `sqs`. Um
+timer do systemd (usuário, a cada minuto, [watchdog.sh](../deploy/lab/watchdog.sh)) cobre esse
+caso. Depois de 3 falhas seguidas de readiness, ele consulta o readiness direto numa API pela rede
+do compose. Se ela responder `"sqs":"DOWN"`, o watchdog faz o mesmo que `make recover-broker`:
+sobe o MiniStack, reaplica o Terraform e reinicia as APIs. Ele não usa os logs dos containers,
+que podem ficar ilegíveis depois de um desligamento abrupto da VM. Ele não age em
 três situações: durante deploy (usa o mesmo lock), com o stack parado de propósito, ou por outra
 causa de falha (só registra). Também espera 10 min entre recuperações. Log em
 `~/.local/state/jungle-deploy/watchdog.log`.
