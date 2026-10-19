@@ -14,6 +14,7 @@ STATE=${JUNGLE_STATE_DIR:-$HOME/.local/state/jungle-deploy}
 READY_URL=${WATCHDOG_READY_URL:-http://127.0.0.1:18080/health/ready}
 FAILS_BEFORE_ACTION=${WATCHDOG_FAILS:-3}
 RECOVERY_COOLDOWN=${WATCHDOG_COOLDOWN:-600}
+CURL_IMAGE=${WATCHDOG_CURL_IMAGE:-curlimages/curl:8.11.1}
 mkdir -p "$STATE"
 LOG=$STATE/watchdog.log
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$LOG"; }
@@ -38,17 +39,20 @@ if [[ -z "$(docker ps -q --filter label=com.docker.compose.project=jungle --filt
   exit 0
 fi
 
-# Broker state loss: recent `sqs` readiness failures that are not shutdown cancellations.
+# Broker state loss: an API itself reports `"sqs":"DOWN"`. Asked directly on the compose
+# network because the edge hides the body once every backend is down. Container logs are
+# not used: an unclean host shutdown can leave them unreadable from `--since` onwards.
 broker_lost=0
+readiness=""
 for n in 1 2 3; do
-  failures=$(docker logs --since 3m "jungle-api-$n-1" 2>&1 |
-    grep '"msg":"readiness probe failed"' | grep '"check":"sqs"' || true)
-  if [[ -n "$failures" ]] && grep -qv 'context canceled' <<< "$failures"; then
+  readiness=$(docker run --rm --network jungle_net "$CURL_IMAGE" -s -m 5 "http://api-$n:8080/health/ready" 2> /dev/null || true)
+  if [[ "$readiness" == *'"sqs":"DOWN"'* ]]; then
     broker_lost=1
+    break
   fi
 done
 if ((broker_lost == 0)); then
-  if ((fails % 15 == FAILS_BEFORE_ACTION % 15)); then log "not ready for ${fails} min, cause is not the broker - not acting"; fi
+  if ((fails % 15 == FAILS_BEFORE_ACTION % 15)); then log "not ready for ${fails} min, cause is not the broker (readiness: ${readiness:-no answer}) - not acting"; fi
   exit 0
 fi
 
