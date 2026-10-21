@@ -23,7 +23,7 @@ Keycloak (realm jungle) ◄── JWKS ─────────────�
 | `internal/workers` | `Poller` e `Loop` ligados ao ciclo de vida do Fx |
 | `internal/bootstrap` | Único lugar que conhece todos os módulos Fx |
 | `migrations/` | SQL versionado (goose), embutido no binário |
-| `infra/terraform` | Plano de controle: realm/clients, filas/tópico/IAM, papéis do Postgres, rota pública |
+| `infra/terraform` | Plano de controle: realm/clients, filas/tópico/IAM, papéis do Postgres |
 
 ## Dinheiro
 
@@ -274,7 +274,7 @@ Tipo e versão são fixados no construtor; timestamps em UTC RFC 3339; dinheiro 
 
 ## Autenticação e autorização
 
-**IdP: Keycloak 26.8** (recomendado pelo desafio). Padrão OIDC, `client_credentials`, provisionado
+**IdP: Keycloak 26.8.** Padrão OIDC, `client_credentials`, provisionado
 por Terraform (provider oficial `keycloak/keycloak`). Não há cadastro de senhas nem emissão própria de
 tokens.
 
@@ -345,22 +345,19 @@ O consumer mantém todas as validações de domínio.
 ## Infraestrutura
 
 - **Compose** (projeto `jungle`, portas só em 127.0.0.1): Postgres 17, Keycloak 26.8 (`/auth`),
-  MiniStack 1.5.19, provisioner (Terraform), migrate, `api-1..3`, Traefik; profiles `obs` e `edge`.
+  MiniStack 1.5.19, provisioner (Terraform), migrate, `api-1..3`, Traefik; profile `obs` (Prometheus e Grafana).
 - **Terraform** em container, dentro do compose: um `docker compose up --build` provisiona tudo, sem
   Terraform no host.
   - `stacks/platform`: realm/clients/scopes/mappers, filas/tópico/assinatura/IAM, papéis do
     Postgres; segredos gerados (`random_password`) e entregues em volume.
-  - `stacks/edge-lab`: rota pública no Caddy da VM, com state próprio.
 - **Por que MiniStack:** o LocalStack exige auth token desde 2026-03-23, o que quebra a reprodução a
   partir de checkout limpo. O MiniStack é MIT e aplica IAM.
   - Achado: o MiniStack exige `sns:PublishBatch` explicitamente (a AWS usa `sns:Publish`), por isso
     a policy lista os dois.
   - Plano B: LocalStack 4.9.2 fixado.
 - **CI/CD** ([docs/CICD.md](docs/CICD.md)): os mesmos gates em PR e na `main`; imagem no GHCR com
-  SBOM, proveniência e assinatura cosign; deploy no lab pela tailnet (OIDC, sem segredo de longa
-  duração), num sshd sem root com forced command que só aceita commits da `main` com imagem
-  assinada; rolling update das 3 APIs, smoke e2e e rollback automático. Migrations seguem
-  expand/contract porque o rollout convive com a versão anterior.
+  SBOM, proveniência e assinatura cosign. Migrations seguem expand/contract (compatíveis com a
+  versão anterior), para que um rolling update de várias instâncias seja possível.
 
 ## Limitações e trabalho não concluído
 
@@ -369,7 +366,7 @@ O consumer mantém todas as validações de domínio.
 - **Throughput da outbox no ambiente local** é limitado pelo SNS emulado e pela ordem estrita por
   carteira (ver [docs/LOADTEST.md](docs/LOADTEST.md)). Melhoria proposta: claim de vários eventos por
   partição com advisory lock.
-- **Partidas dobradas e tracing (OpenTelemetry)** não foram implementados (diferenciais opcionais).
+- **Partidas dobradas e tracing (OpenTelemetry)** não foram implementados.
 - **Superusuário** consegue burlar triggers (limitação inerente; mitigada por papéis).
 - **Persistência do MiniStack** só é salva num shutdown gracioso. Um crash do emulador perde filas,
   mensagens e IAM. Isso aconteceu uma vez durante os testes de carga: a fila de auditoria acumulou

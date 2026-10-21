@@ -3,20 +3,40 @@
 [![ci](https://github.com/fredzolio/backend-go-jungle/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fredzolio/backend-go-jungle/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/fredzolio/backend-go-jungle/badge)](https://scorecard.dev/viewer/?uri=github.com/fredzolio/backend-go-jungle)
 
-Solução do [desafio backend da Jungle Gaming](https://github.com/junglegaming/backend-challenge-go). É um serviço em Go 1.27.2 com
-Uber Fx que movimenta carteiras a partir de operações de provedores, recebidas por HTTP e por SQS
-FIFO. Tem:
-- idempotência persistente e ledger append-only;
-- invariantes garantidas pelo PostgreSQL;
-- inbox e outbox transacionais (SNS FIFO);
-- OAuth 2.0 / OIDC com Keycloak.
+Serviço em Go 1.27.2 (Uber Fx) que movimenta carteiras a partir de operações de provedores de jogos
+(`BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`), recebidas por HTTP e por SQS FIFO. É um projeto pessoal
+que explora como manter saldo e histórico financeiro corretos com várias instâncias, entregas
+duplicadas e mensagens fora de ordem. O núcleo é uma carteira com ledger append-only e
+idempotência persistente; os eventos saem por uma outbox transacional para SNS FIFO e a
+autenticação é OAuth 2.0 / OIDC (client credentials) no Keycloak.
 
+O que o torna interessante do ponto de vista de engenharia:
+- **Invariantes no PostgreSQL:** saldo nunca negativo, ledger append-only com cadeia contínua de
+  lançamentos, no máximo uma reversão bem-sucedida por transação. Valem por `CHECK`, triggers,
+  constraint triggers adiados até o commit e papéis sem `UPDATE`/`DELETE`, independentemente do
+  código da aplicação.
+- **Idempotência por RFC 8785:** o hash do payload usa JSON canônico (JCS), então a mesma operação
+  tem o mesmo hash por HTTP e por SQS. Mesma chave e mesmo payload devolvem o resultado original;
+  mesma chave com payload diferente dá `409`. Os vetores de teste vêm de uma implementação
+  independente.
+- **Resolução fora de ordem:** um `REFUND` ou `ROLLBACK` que chega antes da `BET` de referência fica
+  em `PENDING_REFERENCE` e é retomado por qualquer instância, com backoff e prazo, sem lease que
+  possa vazar.
+- **Outbox com fencing token:** o relay reivindica eventos com `FOR UPDATE SKIP LOCKED`, lease e
+  `claim_id`, publica fora de transação SQL e confirma cercado pelo token. Um crash entre publicar e
+  confirmar republica o mesmo `eventId`, e a ordem por carteira é preservada.
+- **Testes de falha:** a suíte `system` sobe 3+ processos reais do binário (`-race`, `-tags faultinject`)
+  e os mata em pontos exatos, como depois do commit e antes do `DeleteMessage` ou entre publicar e
+  confirmar na outbox. As suítes de integração usam Postgres e MiniStack reais (testcontainers).
+
+Documentação:
 - **Decisões e garantias:** [ARCHITECTURE.md](ARCHITECTURE.md)
 - **Contrato HTTP:** [api/openapi.yaml](api/openapi.yaml), também em `/docs`
-- **Testes e cenários obrigatórios:** [docs/TESTING.md](docs/TESTING.md)
+- **Testes e cenários de negócio:** [docs/TESTING.md](docs/TESTING.md)
 - **Carga:** [docs/LOADTEST.md](docs/LOADTEST.md)
-- **CI/CD:** [docs/CICD.md](docs/CICD.md) (gates, imagem assinada, deploy no lab via Tailscale)
-- **Testar no ambiente público:** [seção abaixo](#testar-no-ambiente-público) (credenciais de avaliação incluídas)
+- **CI/CD:** [docs/CICD.md](docs/CICD.md) (gates, varreduras de segurança, imagem assinada no GHCR)
+
+Para rodar localmente basta Docker com Compose v2 (`make up`); veja [Subir](#subir).
 
 ## Pré-requisitos
 
@@ -109,8 +129,9 @@ curl -s -X POST http://localhost:18080/wallets/$WID/reconciliation -H "Authoriza
 ```
 
 Pela fila, um provider publica no `wager-transactions.fifo` com suas credenciais IAM
-(`/provisioned/aws/producer-provider-a/*`), usando `MessageGroupId = walletId` e o envelope do
-desafio. Exemplo em `test/e2e/sqs_e2e_test.go`.
+(`/provisioned/aws/producer-provider-a/*`), usando `MessageGroupId = walletId` e o envelope
+`WagerTransactionRequested` (`messageId`, `type`, `occurredAt` e `data` com a operação; definido em
+`internal/adapters/sqsconsumer/envelope.go`). Exemplo em `test/e2e/sqs_e2e_test.go`.
 
 ## Testes
 
@@ -126,24 +147,24 @@ make load-test                 # k6
 
 Detalhes, matriz de cenários e simulação de falhas: [docs/TESTING.md](docs/TESTING.md).
 
-## Testar no ambiente público
+## Roteiro de concorrência e idempotência
 
-`https://jungle.lab.fredzol.io` roda a versão atual da `main`, com 3 instâncias da API atrás do edge.
-O contrato fica em [`/docs`](https://jungle.lab.fredzol.io/docs). Para autenticar, use os clients de
-avaliação abaixo. O segredo é público de propósito: estes clients existem só para testar o lab.
+Com o stack no ar, existem três clients de demonstração, com o segredo público `jungle-demo-local`
+(`DEMO_CLIENT_SECRET` no [.env.example](.env.example); vazio desativa os clients). Eles só valem no
+ambiente local e permitem testar sem ler as credenciais geradas pelo Terraform.
 
 | client_id | client_secret | Papel |
 |---|---|---|
-| `demo-internal` | `jungle-lab-demo-2026` | serviço interno: abre e lê carteiras, ledger, reconciliação |
-| `demo-provider-1` | `jungle-lab-demo-2026` | provider `demo-provider-1`: envia e consulta as próprias transações |
-| `demo-provider-2` | `jungle-lab-demo-2026` | provider `demo-provider-2`: para testar o isolamento entre providers |
+| `demo-internal` | `jungle-demo-local` | serviço interno: abre e lê carteiras, ledger, reconciliação |
+| `demo-provider-1` | `jungle-demo-local` | provider `demo-provider-1`: envia e consulta as próprias transações |
+| `demo-provider-2` | `jungle-demo-local` | provider `demo-provider-2`: para testar o isolamento entre providers |
 
-Roteiro completo (bash, `curl`, `jq` e `uuidgen`), incluindo o teste obrigatório de duas apostas
-simultâneas de 80.00 numa carteira de 100.00:
+Roteiro completo (bash, `curl`, `jq` e `uuidgen`), incluindo duas apostas simultâneas de 80.00
+numa carteira de 100.00:
 
 ```bash
-BASE=https://jungle.lab.fredzol.io
-SECRET=jungle-lab-demo-2026
+BASE=http://localhost:18080
+SECRET=jungle-demo-local
 token() { curl -s -X POST "$BASE/auth/realms/jungle/protocol/openid-connect/token" \
   -d grant_type=client_credentials -d client_id="$1" -d client_secret="$SECRET" | jq -r .access_token; }
 INTERNAL=$(token demo-internal); P1=$(token demo-provider-1); P2=$(token demo-provider-2)
@@ -180,29 +201,8 @@ curl -s -o /dev/null -w '%{http_code}\n' "$BASE/wallets/$WID"
 rm -rf "$T"
 ```
 
-`WIN`, `LOSS`, `REFUND` e `ROLLBACK` usam o mesmo endpoint (veja `/docs`). O lab expõe só HTTP:
-a fila SQS (MiniStack), o console do Keycloak e as métricas ficam privados. O caminho por fila
-pode ser testado localmente com `docker compose up --build` e `make test-e2e`
-(`test/e2e/sqs_e2e_test.go`). Localmente existem os mesmos clients de avaliação, com o segredo
-`jungle-demo-local` (`DEMO_CLIENT_SECRET` no `.env.example`; vazio desativa os clients).
-
-## Ambiente público (VM do autor)
-
-`https://jungle.lab.fredzol.io` aponta para este mesmo stack. A rota é gerida pelo stack Terraform
-`edge-lab`:
-
-```bash
-make lab-init      # .env.lab com a URL pública e segredos fortes (uma vez)
-make destroy && make up
-make lab-expose    # publica no Caddy da VM (make lab-unexpose remove)
-make lab-smoke     # suíte e2e pelo HTTPS público
-```
-
-Só ficam públicos a API, `/docs` e os endpoints de token, JWKS e discovery do realm `jungle`.
-
-Depois do setup inicial, quem atualiza o lab é o pipeline: cada push verde na `main` faz rolling
-deploy com smoke e rollback automático ([docs/CICD.md](docs/CICD.md)). O checkout usado pelo deploy
-é `/home/zolio/deploy/backend-go-jungle`, com o env decifrado do SOPS (`deploy/lab/lab.enc.env`).
+`WIN`, `LOSS`, `REFUND` e `ROLLBACK` usam o mesmo endpoint (veja `/docs`). O caminho por fila pode
+ser testado com `docker compose up --build` e `make test-e2e` (`test/e2e/sqs_e2e_test.go`).
 
 ## Estrutura
 
@@ -215,7 +215,7 @@ internal/workers/       loops de background no ciclo de vida do Fx
 internal/bootstrap/     composição Fx (roles)
 migrations/             SQL versionado (goose)
 api/openapi.yaml        contrato HTTP
-infra/terraform/        plano de controle (platform) e rota pública (edge-lab)
+infra/terraform/        plano de controle (stack platform)
 infra/{keycloak,postgres,traefik,observability}/
 test/{e2e,system,load}/
 ```

@@ -9,12 +9,11 @@ reais (testcontainers) e o e2e usa o stack completo com o Keycloak real.
 | Integração | `integration` | `make test-integration` | Docker | adapters × Postgres/MiniStack reais, casos de uso, HTTP com JWT real, consumer, relay, ciclo de vida do Fx |
 | Sistema | `system` | `make test-system` | Docker + gcc (`-race`) | binário real (`-race`, `-tags faultinject`) como **processos independentes**, morte em pontos exatos |
 | E2E | `e2e` | `make up && make test-e2e` | stack no ar | tokens do Keycloak real, SQS com IAM aplicado (`AUTH=true`), eventos na fila assinante, pelo edge |
-| E2E público | `e2e` | `make lab-smoke` (na VM) | rota publicada | a mesma suíte e2e por `https://jungle.lab.fredzol.io` |
 | Carga | — | `make load-test` | stack no ar | ver [LOADTEST.md](LOADTEST.md) |
 
 `go vet` deve passar com todas as tags: `for t in "" integration e2e system faultinject; do go vet -tags="$t" ./...; done`.
 
-## Cenários obrigatórios do desafio → teste
+## Cenários de negócio → teste
 
 | # | Cenário | Teste(s) |
 |---|---|---|
@@ -29,9 +28,9 @@ reais (testcontainers) e o e2e usa o stack completo com o Keycloak real.
 | — | Cruzamento HTTP × SQS | `sqsconsumer: TestSame_operation_via_HTTP_and_SQS_is_applied_once` · `system: TestHTTP_and_SQS_copies_of_an_operation_apply_once_across_processes` · `e2e: TestSQS_operation_reaches_the_wallet_and_matches_HTTP_idempotency` |
 | — | Saldo × ledger ao final | `system: assertLedgerMatchesBalances` (todas as carteiras, ao fim de cada cenário) · reconciliação (`app: TestReconcile_*`) |
 
-## Outras verificações exigidas
+## Outras verificações
 
-| Exigência | Teste(s) |
+| Propriedade | Teste(s) |
 |---|---|
 | Money: parsing, escala, limites, inválidos, moedas | `money_test.go` (tabelas + `FuzzParse`) |
 | Invariantes da carteira, transições, 5 tipos, zero, OPENING | `wallet_test.go`, `transaction_test.go`, `rules_test.go`, `request_test.go`, `events_test.go` |

@@ -17,7 +17,7 @@ O atraso da outbox vem do Prometheus (`jungle_outbox_oldest_pending_seconds`).
 
 ## Ambiente
 
-- VM Hostinger com **2 vCPU** AMD EPYC 9354P e 8 GB RAM, dividida com outros containers da VM.
+- VM com **2 vCPU** (AMD EPYC 9354P) e 8 GB de RAM, que também executava outros containers.
 - Stack completo na mesma máquina: Postgres 17, Keycloak, MiniStack, Traefik, 3 instâncias da API
   (todas com consumer, resolver e outbox ativos), Prometheus e Grafana. O k6 também roda na mesma VM.
 
@@ -32,7 +32,7 @@ O atraso da outbox vem do Prometheus (`jungle_outbox_oldest_pending_seconds`).
 **Leitura:** a vazão máxima nesta VM fica em ~220 transações/s e não depende do número de VUs. Com 3
 VUs ela já é atingida, com latência baixa; com 20 VUs só cresce a fila (latência). Durante a carga,
 o **Postgres consome ~105% de CPU** (das 2 vCPUs), enquanto as 3 APIs ficam em ~11% cada e o
-MiniStack em ~12%. O limite é o banco nesta máquina pequena e compartilhada. Cada transação faz
+MiniStack em ~12%. O limite é o banco nesta máquina pequena, que não era dedicada ao teste. Cada transação faz
 INSERT, lock e UPDATE da carteira, INSERT no ledger, UPDATE do status, 1–2 INSERTs na outbox e os
 triggers de invariantes, inclusive os diferidos.
 
