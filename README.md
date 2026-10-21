@@ -3,7 +3,7 @@
 [![ci](https://github.com/fredzolio/backend-go-jungle/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fredzolio/backend-go-jungle/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/fredzolio/backend-go-jungle/badge)](https://scorecard.dev/viewer/?uri=github.com/fredzolio/backend-go-jungle)
 
-Serviço em Go 1.27.2 (Uber Fx) que movimenta carteiras a partir de operações de provedores de jogos
+Serviço em Go 1.27.3 (Uber Fx) que movimenta carteiras a partir de operações de provedores de jogos
 (`BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`), recebidas por HTTP e por SQS FIFO. É um projeto pessoal
 que explora como manter saldo e histórico financeiro corretos com várias instâncias, entregas
 duplicadas e mensagens fora de ordem. O núcleo é uma carteira com ledger append-only e
@@ -41,7 +41,7 @@ Para rodar localmente basta Docker com Compose v2 (`make up`); veja [Subir](#sub
 ## Pré-requisitos
 
 - Docker com Compose v2 (é tudo o que precisa para rodar; o Terraform roda em container).
-- Para testes: Go 1.27.2 (`GOTOOLCHAIN=go1.27.2` baixa sozinho), Docker; `gcc` para `make test-system` (`-race`).
+- Para testes: Go 1.27.3 (`GOTOOLCHAIN=go1.27.3` baixa sozinho), Docker; `gcc` para `make test-system` (`-race`).
 
 ## Subir
 

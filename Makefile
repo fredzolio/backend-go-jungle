@@ -1,7 +1,7 @@
 # Jungle wallet — developer entry points. Everything runs in the isolated compose project "jungle".
 SHELL := /bin/bash
 COMPOSE ?= docker compose
-export GOTOOLCHAIN ?= go1.27.2
+export GOTOOLCHAIN ?= go1.27.3
 
 .DEFAULT_GOAL := help
 

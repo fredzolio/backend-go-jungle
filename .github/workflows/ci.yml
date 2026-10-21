@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  GOTOOLCHAIN: go1.27.2 # keep in sync with the Makefile
+  GOTOOLCHAIN: go1.27.3 # keep in sync with the Makefile
 
 jobs:
   changes:
