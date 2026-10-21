@@ -51,9 +51,6 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
-    ignore:
-      # edge.Dockerfile pins the Caddy CLI to the VM's Caddy (validates the Caddyfile it will load).
-      - dependency-name: caddy
   - package-ecosystem: docker-compose
     directory: "/"
     schedule:
@@ -70,16 +67,6 @@ updates:
         update-types: ["version-update:semver-major"]
   - package-ecosystem: terraform
     directory: "/infra/terraform/stacks/platform"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 3
-    commit-message:
-      prefix: "build(deps)"
-    groups:
-      minor-and-patch:
-        update-types: [minor, patch]
-  - package-ecosystem: terraform
-    directory: "/infra/terraform/stacks/edge-lab"
     schedule:
       interval: weekly
     open-pull-requests-limit: 3

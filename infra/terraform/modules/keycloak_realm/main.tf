@@ -6,8 +6,9 @@
 #   * Internal service (jungle-internal): wallet scopes; it has no provider_id claim.
 #   * Every token carries aud=jungle-api, which the API validates.
 #   * provider-c-shortlived: token lifespan of a few seconds, for expired-token tests.
-#   * demo_clients (optional): same roles, but with a known secret published in the README so
-#     evaluators can call the public lab; disabled when demo_client_secret is empty.
+#   * demo_clients (optional): same roles, but with a known local secret published in the README
+#     so the walkthrough works without reading generated credentials; disabled when
+#     demo_client_secret is empty.
 terraform {
   required_providers {
     keycloak = { source = "keycloak/keycloak" }

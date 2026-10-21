@@ -11,10 +11,6 @@ jobs:
   terraform:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        stack: [platform, edge-lab]
     steps:
       - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with: { egress-policy: audit }
@@ -26,7 +22,7 @@ jobs:
           terraform_wrapper: false
       - run: terraform fmt -check -recursive -diff infra/terraform
       - name: terraform validate
-        working-directory: infra/terraform/stacks/${{ matrix.stack }}
+        working-directory: infra/terraform/stacks/platform
         run: |
           terraform init -backend=false -lockfile=readonly >/dev/null
           terraform validate
@@ -37,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        dockerfile: [Dockerfile, infra/keycloak/Dockerfile, infra/terraform/edge.Dockerfile, infra/terraform/runner.Dockerfile]
+        dockerfile: [Dockerfile, infra/keycloak/Dockerfile, infra/terraform/runner.Dockerfile]
     steps:
       - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with: { egress-policy: audit }

@@ -1,8 +1,6 @@
 # Jungle wallet — developer entry points. Everything runs in the isolated compose project "jungle".
 SHELL := /bin/bash
-# The VM lab uses .env.lab (created by `make lab-init`); a plain checkout uses defaults/.env.
-ENV_FILE ?= $(if $(wildcard .env.lab),.env.lab,)
-COMPOSE ?= docker compose $(if $(ENV_FILE),--env-file $(ENV_FILE),)
+COMPOSE ?= docker compose
 export GOTOOLCHAIN ?= go1.27.2
 
 .DEFAULT_GOAL := help
@@ -19,9 +17,8 @@ up: ## Build and start the whole environment (detached)
 down: ## Stop the environment, keeping data volumes
 	$(COMPOSE) --profile obs down
 
-destroy: ## Stop and delete EVERYTHING of this environment (public route, containers, volumes, local images)
-	-@$(MAKE) --no-print-directory lab-unexpose 2>/dev/null
-	$(COMPOSE) --profile obs --profile edge down -v --rmi local --remove-orphans
+destroy: ## Stop and delete EVERYTHING of this environment (containers, volumes, local images)
+	$(COMPOSE) --profile obs down -v --rmi local --remove-orphans
 
 obs-up: ## Start Prometheus (127.0.0.1:19090) and Grafana (127.0.0.1:13000)
 	$(COMPOSE) --profile obs up -d prometheus grafana
@@ -51,57 +48,6 @@ migrate-up: ## Apply pending migrations
 
 migrate-down: ## Revert the latest migration
 	$(COMPOSE) run --rm migrate migrate down
-
-# ---------- VM lab (https://jungle.lab.fredzol.io) ----------
-.PHONY: lab-init lab-expose lab-unexpose lab-smoke
-lab-init: ## Create .env.lab with the public URL and strong random bootstrap secrets (once)
-	@test -f .env.lab && echo ".env.lab already exists" || { \
-	  umask 077; r() { openssl rand -hex 24; }; { \
-	  echo "PUBLIC_BASE_URL=https://jungle.lab.fredzol.io"; echo "ADMIN_BASE_URL=http://localhost:18090"; \
-	  echo "POSTGRES_PASSWORD=$$(r)"; echo "KEYCLOAK_DB_PASSWORD=$$(r)"; echo "KEYCLOAK_ADMIN_PASSWORD=$$(r)"; \
-	  echo "MINISTACK_ROOT_SECRET=$$(r)"; echo "GRAFANA_ADMIN_PASSWORD=$$(r)"; echo "LOG_LEVEL=info"; } > .env.lab; \
-	  echo ".env.lab created (bootstrap secrets apply to fresh volumes: run make destroy && make up)"; }
-
-# The VM Caddy 2.6.2 panics on admin-API reloads (also `systemctl reload`), so the
-# route is applied/validated by Terraform and Caddy is *restarted* (brief blip for
-# every site on the VM) only after a successful apply/destroy.
-lab-expose: ## Publish https://jungle.lab.fredzol.io on the VM Caddy (Terraform stack edge-lab)
-	$(COMPOSE) --profile edge run --rm --build edge-lab apply
-	sudo systemctl restart caddy
-
-lab-unexpose: ## Remove the public route (Terraform destroy of edge-lab)
-	$(COMPOSE) --profile edge run --rm --build edge-lab destroy
-	sudo systemctl restart caddy
-
-lab-smoke: ## Run the e2e suite through the public HTTPS URL
-	@$(MAKE) --no-print-directory test-e2e E2E_BASE_URL=https://jungle.lab.fredzol.io
-
-# ---------- Lab deploy (CD) ----------
-.PHONY: lab-deploy-bootstrap lab-deploy lab-deploy-status lab-rollback lab-env-edit lab-env-decrypt
-lab-deploy-bootstrap: ## Install/refresh the CI deploy channel (non-root sshd, forced command, cosign) on this VM
-	deploy/lab/bootstrap.sh
-
-# The lab stack is owned by the deploy checkout: running deploy.sh from another checkout would
-# recreate postgres/edge with different bind-mount paths. rollback/status use the same forced
-# command as CI (lock, main ancestry, cosign verification, checkout of the release commit).
-LAB_DEPLOY_CHECKOUT ?= /home/zolio/deploy/backend-go-jungle
-LAB_SSH_ENTRY := $(HOME)/.local/libexec/jungle-deploy/ssh-entry
-
-lab-deploy: ## Manual rolling deploy from the deploy checkout (IMAGE=<ref> SHA=<git sha>); a ref without registry host is local
-	@test -n "$(IMAGE)" -a -n "$(SHA)" || { echo "usage: make lab-deploy IMAGE=<ref> SHA=<git sha>"; exit 2; }
-	$(LAB_DEPLOY_CHECKOUT)/deploy/lab/deploy.sh "$(IMAGE)" "$(SHA)"
-
-lab-deploy-status: ## Show current/previous release and the running api images
-	@SSH_ORIGINAL_COMMAND=status $(LAB_SSH_ENTRY)
-
-lab-rollback: ## Redeploy the previous release (signature + main checks, deploy checkout)
-	SSH_ORIGINAL_COMMAND=rollback $(LAB_SSH_ENTRY) < /dev/null
-
-lab-env-edit: ## Edit the encrypted lab environment (sops)
-	$(HOME)/.local/bin/sops deploy/lab/lab.enc.env
-
-lab-env-decrypt: ## Write .env.lab from deploy/lab/lab.enc.env (mode 600)
-	@umask 077; $(HOME)/.local/bin/sops decrypt --input-type dotenv --output-type dotenv deploy/lab/lab.enc.env > .env.lab && echo ".env.lab written"
 
 # ---------- Load ----------
 .PHONY: load-test
