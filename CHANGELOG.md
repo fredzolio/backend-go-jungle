@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/fredzolio/backend-go-jungle/compare/v1.0.0...v1.0.1) (2026-10-21)
+
+
+### Documentation
+
+* present the project on its own terms and describe the CI/CD that remains ([ed6c684](https://github.com/fredzolio/backend-go-jungle/commit/ed6c6841f601584dd20d4b517ffa4c5a0bb77764))
+
 ## 1.0.0 (2026-10-02)
 
 
