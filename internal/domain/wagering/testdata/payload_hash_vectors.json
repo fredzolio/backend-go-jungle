@@ -1,6 +1,6 @@
 [
   {
-    "name": "bet-challenge-example",
+    "name": "bet-example",
     "input": {
       "providerId": "provider-a",
       "externalTransactionId": "transaction-123",
