@@ -12,6 +12,10 @@ import (
 	"github.com/fredzolio/backend-go-jungle/internal/domain/wagering"
 )
 
+// problemTypeBase prefixes the RFC 9457 `type` of every problem. `type` is a URI reference,
+// so a relative value identifies the problem type without tying the contract to a host name.
+const problemTypeBase = "/problems/"
+
 // problem is the RFC 9457 error body. `code` is the stable machine-readable value.
 type problem struct {
 	Type          string       `json:"type"`
@@ -50,7 +54,7 @@ func writeProblem(w http.ResponseWriter, r *http.Request, status int, code, deta
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(problem{ // client went away
-		Type: "https://jungle.lab.fredzol.io/problems/" + code, Title: http.StatusText(status), Status: status,
+		Type: problemTypeBase + code, Title: http.StatusText(status), Status: status,
 		Code: code, Detail: detail, CorrelationID: correlationID(r.Context()), Errors: issues,
 	})
 }

@@ -275,7 +275,10 @@ components:
     Problem:
       type: object
       properties:
-        type: { type: string }
+        type:
+          type: string
+          format: uri-reference
+          description: Problem type identifier, `/problems/<code>`. A relative reference used as an identifier; it is not a served page.
         title: { type: string }
         status: { type: integer }
         code:

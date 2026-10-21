@@ -98,7 +98,7 @@ func TestSubmit_contract_status_codes(t *testing.T) {
 	}
 	for _, c := range cases {
 		r := post(c.body, c.key)
-		if r.status != c.status || r.body["code"] != c.code {
+		if r.status != c.status || r.body["code"] != c.code || r.body["type"] != "/problems/"+c.code {
 			t.Fatalf("%v: %d %v", c.body, r.status, r.body)
 		}
 	}
