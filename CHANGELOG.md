@@ -17,7 +17,7 @@
 * F7 transactional outbox relay to SNS FIFO ([e3b6363](https://github.com/fredzolio/backend-go-jungle/commit/e3b63631b37193a947d75ee6bb61a3c091a2225f))
 * F8 observability and reconciliation ([4c59eb0](https://github.com/fredzolio/backend-go-jungle/commit/4c59eb095de3a44c181a4bdf12cdfcfa0a746552))
 * F9 multi-process and failure scenarios ([4f589af](https://github.com/fredzolio/backend-go-jungle/commit/4f589af8fdc1b1e6613004bc22a4fd52c75443bb))
-* **idp:** evaluation clients with a published secret (demo-internal, demo-provider-1/2) ([0e40639](https://github.com/fredzolio/backend-go-jungle/commit/0e40639adff97d1d2ddd35d60e94f5deebb380aa))
+* **idp:** local demo clients with a published secret (demo-internal, demo-provider-1/2) ([0e40639](https://github.com/fredzolio/backend-go-jungle/commit/0e40639adff97d1d2ddd35d60e94f5deebb380aa))
 
 
 ### Bug Fixes
@@ -35,4 +35,4 @@
 
 * CI/CD pipeline and lab deploy (docs/CICD.md, README, ARCHITECTURE) ([7c1bd65](https://github.com/fredzolio/backend-go-jungle/commit/7c1bd65914bbfa79a7ee8ac96bbf4427fa61dc58))
 * F11 delivery docs, load test and outbox throughput work ([a9fefc4](https://github.com/fredzolio/backend-go-jungle/commit/a9fefc4f39c8a7faac1a143b383c18c30cb2e858))
-* public lab walkthrough with evaluation credentials ([12c85ad](https://github.com/fredzolio/backend-go-jungle/commit/12c85adc11fbe6199b6de270c966cfb51bd0732a))
+* walkthrough with demo credentials ([12c85ad](https://github.com/fredzolio/backend-go-jungle/commit/12c85adc11fbe6199b6de270c966cfb51bd0732a))
