@@ -104,7 +104,7 @@ services:
 
   ministack:
     <<: *hardening
-    image: ministackorg/ministack:1.5.19
+    image: ministackorg/ministack:1.5.30
     restart: unless-stopped
     environment:
       AUTH: "true"
@@ -193,7 +193,7 @@ services:
 
   edge:
     <<: *hardening
-    image: traefik:v3.7.13
+    image: traefik:v3.7.15
     restart: unless-stopped
     read_only: true
     depends_on:
@@ -226,7 +226,7 @@ services:
 
   grafana:
     <<: *hardening
-    image: grafana/grafana:13.2.3
+    image: grafana/grafana:13.2.4
     profiles: [obs]
     restart: unless-stopped
     environment:
