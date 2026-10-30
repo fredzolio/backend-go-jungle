@@ -104,7 +104,7 @@ services:
 
   ministack:
     <<: *hardening
-    image: ministackorg/ministack:1.5.19
+    image: ministackorg/ministack:1.5.33
     restart: unless-stopped
     environment:
       AUTH: "true"
@@ -193,7 +193,7 @@ services:
 
   edge:
     <<: *hardening
-    image: traefik:v3.7.13
+    image: traefik:v3.7.16
     restart: unless-stopped
     read_only: true
     depends_on:
@@ -214,7 +214,7 @@ services:
   # ---------- profile "obs": docker compose --profile obs up -d (or: make obs-up) ----------
   prometheus:
     <<: *hardening
-    image: prom/prometheus:v3.15.0
+    image: prom/prometheus:v3.15.1
     profiles: [obs]
     restart: unless-stopped
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=2d", "--web.listen-address=:9090"]
@@ -226,7 +226,7 @@ services:
 
   grafana:
     <<: *hardening
-    image: grafana/grafana:13.2.3
+    image: grafana/grafana:13.3.0
     profiles: [obs]
     restart: unless-stopped
     environment:
